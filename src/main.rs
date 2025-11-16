@@ -20,9 +20,11 @@ fn main() {
     app.add_plugins((DefaultPlugins, VelloPlugin::default()));
 
     app.init_resource::<FiksiSystem>();
+    app.init_resource::<CadMode>();
 
     app.add_systems(PreStartup, setup)
         .add_systems(Startup, (toolbar, add_circle))
+        .add_systems(Update, (update_mode_selection, sync_mode_button_visuals))
         .add_systems(
             PostUpdate,
             (solve, render.run_if(resource_changed::<FiksiSystem>)).chain(),
@@ -44,6 +46,7 @@ fn solve(mut system: ResMut<FiksiSystem>, key_input: Res<ButtonInput<KeyCode>>) 
         system.solve(SolvingOptions::DEFAULT);
     }
 }
+
 fn toolbar(mut commands: Commands) {
     commands.spawn((
         Node {
@@ -54,12 +57,63 @@ fn toolbar(mut commands: Commands) {
             ..default()
         },
         Children::spawn(Spawn(col((
-            Spawn(button("Select")),
-            Spawn(button("Point")),
-            Spawn(button("Line")),
-            Spawn(button("Circle")),
+            Spawn((
+                button("Select"),
+                ModeButton {
+                    mode: CadMode::Select,
+                },
+            )),
+            Spawn((
+                button("Point"),
+                ModeButton {
+                    mode: CadMode::Point,
+                },
+            )),
+            Spawn((
+                button("Line"),
+                ModeButton {
+                    mode: CadMode::Line,
+                },
+            )),
+            Spawn((
+                button("Circle"),
+                ModeButton {
+                    mode: CadMode::Circle,
+                },
+            )),
         )))),
     ));
+}
+
+/// Update the current CAD mode based on button presses.
+fn update_mode_selection(
+    mut q: Query<(&ModeButton, &Interaction), (Changed<Interaction>, With<Button>)>,
+    mut current_mode: ResMut<CadMode>,
+) {
+    for (mode_button, interaction) in &mut q {
+        if *interaction == Interaction::Pressed {
+            *current_mode = mode_button.mode;
+            info!("Switched CAD mode to {:?}", *current_mode);
+        }
+    }
+}
+
+/// Temporarily change button visuals to indicate the current mode.
+fn sync_mode_button_visuals(
+    current_mode: Res<CadMode>,
+    mut q: Query<(&ModeButton, &mut BackgroundColor)>,
+) {
+    if !current_mode.is_changed() {
+        return;
+    }
+
+    for (mode_button, mut bg) in &mut q {
+        if mode_button.mode == *current_mode {
+            bg.0 = Color::srgb(0.25, 0.5, 0.9);
+        } else {
+            bg.0 = Color::srgb(0.15, 0.15, 0.15);
+        }
+    }
 }
 
 fn add_circle(mut system: ResMut<FiksiSystem>) {
@@ -107,4 +161,24 @@ fn render(mut q_scenes: Query<&mut VelloScene>, system: Res<FiksiSystem>) -> Res
     }
 
     Ok(())
+}
+
+/// Indicate which tool is currently active.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CadMode {
+    Select,
+    Point,
+    Line,
+    Circle,
+}
+
+impl Default for CadMode {
+    fn default() -> Self {
+        CadMode::Select
+    }
+}
+
+#[derive(Component)]
+struct ModeButton {
+    mode: CadMode,
 }
