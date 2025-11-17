@@ -38,10 +38,7 @@ fn main() {
                 line_tool_clicks,
             ),
         )
-        .add_systems(
-            PostUpdate,
-            (solve, render.run_if(resource_changed::<FiksiSystem>)).chain(),
-        );
+        .add_systems(PostUpdate, (solve, render, line_preview_vello).chain());
 
     app.run();
 }
@@ -246,6 +243,45 @@ fn line_tool_clicks(
             line_state.start_pos = None;
         }
     }
+}
+
+fn line_preview_vello(
+    mut q_scenes: Query<&mut VelloScene>,
+    line_state: Res<LineToolState>,
+    cursor: Res<WorldCursor>,
+    mode: Res<CadMode>,
+) -> Result {
+    if *mode != CadMode::Line {
+        return Ok(());
+    }
+
+    let Some(start) = line_state.start_pos else {
+        return Ok(());
+    };
+
+    if !cursor.in_window {
+        return Ok(());
+    }
+
+    let mut scene = q_scenes.single_mut()?;
+
+    let white_brush = Brush::Solid(peniko::Color::WHITE);
+    let preview_stroke = kurbo::Stroke::new(1.0);
+
+    let start_point = kurbo::Point::new(start.x as f64, -start.y as f64);
+    let end_point = kurbo::Point::new(cursor.position.x as f64, -cursor.position.y as f64);
+
+    let preview_line = kurbo::Line::new(start_point, end_point);
+
+    scene.stroke(
+        &preview_stroke,
+        Affine::IDENTITY,
+        &white_brush,
+        None,
+        &preview_line,
+    );
+
+    Ok(())
 }
 
 fn render(mut q_scenes: Query<&mut VelloScene>, system: Res<FiksiSystem>) -> Result {
