@@ -21,9 +21,10 @@ fn main() {
 
     app.add_plugins((DefaultPlugins, VelloPlugin::default()));
 
-    app.init_resource::<FiksiSystem>();
-    app.init_resource::<CadMode>();
-    app.init_resource::<WorldCursor>();
+    app.init_resource::<FiksiSystem>()
+        .init_resource::<CadMode>()
+        .init_resource::<WorldCursor>()
+        .init_resource::<LineToolState>();
 
     app.add_systems(PreStartup, setup)
         .add_systems(Startup, (toolbar, add_circle))
@@ -34,6 +35,7 @@ fn main() {
                 sync_mode_button_visuals,
                 update_world_cursor,
                 point_tool_clicks,
+                line_tool_clicks,
             ),
         )
         .add_systems(
@@ -104,7 +106,6 @@ fn update_mode_selection(
     for (mode_button, interaction) in &mut q {
         if *interaction == Interaction::Pressed {
             *current_mode = mode_button.mode;
-            info!("Switched CAD mode to {:?}", *current_mode);
         }
     }
 }
@@ -203,6 +204,50 @@ fn point_tool_clicks(
     FiksiPoint::create(s, pos.x as f64, -pos.y as f64);
 }
 
+fn line_tool_clicks(
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    cursor: Res<WorldCursor>,
+    mut system: ResMut<FiksiSystem>,
+    mode: Res<CadMode>,
+    mut line_state: ResMut<LineToolState>,
+    ui_buttons: Query<&Interaction, With<Button>>,
+) {
+    if *mode != CadMode::Line {
+        return;
+    }
+
+    if !mouse_buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    if ui_buttons
+        .iter()
+        .any(|interaction| *interaction != Interaction::None)
+    {
+        return;
+    }
+
+    if !cursor.in_window {
+        return;
+    }
+
+    let pos = cursor.position;
+    let s = &mut *system;
+
+    match line_state.start_pos {
+        None => {
+            line_state.start_pos = Some(pos);
+        }
+        Some(start) => {
+            let p0 = FiksiPoint::create(s, start.x as f64, -start.y as f64);
+            let p1 = FiksiPoint::create(s, pos.x as f64, -pos.y as f64);
+            Line::create(s, p0, p1);
+
+            line_state.start_pos = None;
+        }
+    }
+}
+
 fn render(mut q_scenes: Query<&mut VelloScene>, system: Res<FiksiSystem>) -> Result {
     let stroke = kurbo::Stroke::new(2.0);
     let white_brush = Brush::Solid(peniko::Color::WHITE);
@@ -259,4 +304,9 @@ struct ModeButton {
 struct WorldCursor {
     position: Vec2,
     in_window: bool,
+}
+
+#[derive(Resource, Default)]
+struct LineToolState {
+    start_pos: Option<Vec2>,
 }
