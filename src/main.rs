@@ -24,7 +24,8 @@ fn main() {
     app.init_resource::<FiksiSystem>()
         .init_resource::<CadMode>()
         .init_resource::<WorldCursor>()
-        .init_resource::<LineToolState>();
+        .init_resource::<LineToolState>()
+        .init_resource::<CircleToolState>();
 
     app.add_systems(PreStartup, setup)
         .add_systems(Startup, (toolbar, add_circle))
@@ -36,9 +37,13 @@ fn main() {
                 update_world_cursor,
                 point_tool_clicks,
                 line_tool_clicks,
+                circle_tool_clicks,
             ),
         )
-        .add_systems(PostUpdate, (solve, render, line_preview_vello).chain());
+        .add_systems(
+            PostUpdate,
+            (solve, render, line_preview_vello, circle_preview_vello).chain(),
+        );
 
     app.run();
 }
@@ -108,6 +113,7 @@ fn update_mode_selection(
 }
 
 /// Temporarily change button visuals to indicate the current mode.
+// TODO: Replace with velyst.
 fn sync_mode_button_visuals(
     current_mode: Res<CadMode>,
     mut q: Query<(&ModeButton, &mut BackgroundColor)>,
@@ -284,6 +290,95 @@ fn line_preview_vello(
     Ok(())
 }
 
+fn circle_tool_clicks(
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    cursor: Res<WorldCursor>,
+    mut system: ResMut<FiksiSystem>,
+    mode: Res<CadMode>,
+    mut circle_state: ResMut<CircleToolState>,
+    ui_buttons: Query<&Interaction, With<Button>>,
+) {
+    if *mode != CadMode::Circle {
+        return;
+    }
+
+    if !mouse_buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    if ui_buttons
+        .iter()
+        .any(|interaction| *interaction != Interaction::None)
+    {
+        return;
+    }
+
+    if !cursor.in_window {
+        return;
+    }
+
+    let pos = cursor.position;
+    let s = &mut *system;
+
+    match circle_state.center_pos {
+        None => {
+            circle_state.center_pos = Some(pos);
+        }
+        Some(center) => {
+            let radius = (pos - center).length();
+
+            if radius > 0.0 {
+                let center_point = FiksiPoint::create(s, center.x as f64, -center.y as f64);
+                let radius_length = Length::create(s, radius as f64);
+                Circle::create(s, center_point, radius_length);
+            }
+
+            circle_state.center_pos = None;
+        }
+    }
+}
+
+fn circle_preview_vello(
+    mut q_scenes: Query<&mut VelloScene>,
+    circle_state: Res<CircleToolState>,
+    cursor: Res<WorldCursor>,
+    mode: Res<CadMode>,
+) -> Result {
+    if *mode != CadMode::Circle {
+        return Ok(());
+    }
+
+    let Some(center) = circle_state.center_pos else {
+        return Ok(());
+    };
+
+    if !cursor.in_window {
+        return Ok(());
+    }
+
+    let mut scene = q_scenes.single_mut()?;
+
+    let white_brush = Brush::Solid(peniko::Color::WHITE);
+    let preview_stroke = kurbo::Stroke::new(1.0);
+
+    let center_point = kurbo::Point::new(center.x as f64, -center.y as f64);
+    let radius = (cursor.position - center).length() as f64;
+
+    if radius > 0.0 {
+        let preview_circle = kurbo::Circle::new(center_point, radius);
+
+        scene.stroke(
+            &preview_stroke,
+            Affine::IDENTITY,
+            &white_brush,
+            None,
+            &preview_circle,
+        );
+    }
+
+    Ok(())
+}
+
 fn render(mut q_scenes: Query<&mut VelloScene>, system: Res<FiksiSystem>) -> Result {
     let stroke = kurbo::Stroke::new(2.0);
     let white_brush = Brush::Solid(peniko::Color::WHITE);
@@ -345,4 +440,9 @@ struct WorldCursor {
 #[derive(Resource, Default)]
 struct LineToolState {
     start_pos: Option<Vec2>,
+}
+
+#[derive(Resource, Default)]
+struct CircleToolState {
+    center_pos: Option<Vec2>,
 }
