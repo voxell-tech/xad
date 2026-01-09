@@ -27,6 +27,8 @@ fn main() {
         .init_resource::<LineToolState>()
         .init_resource::<CircleToolState>();
 
+    // TODO: we should move the ui to its own dedicated plugin
+
     app.add_systems(PreStartup, setup)
         .add_systems(Startup, (toolbar, add_circle))
         .add_systems(
@@ -67,7 +69,8 @@ fn toolbar(mut commands: Commands) {
         Node {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
-            padding: UiRect::all(Val::Vh(8.0)),
+            padding: UiRect::all(Val::Vh(4.0)),
+            margin: UiRect::all(Val::Vh(2.0)),
             flex_direction: FlexDirection::Row,
             ..default()
         },
@@ -131,35 +134,27 @@ fn sync_mode_button_visuals(
     }
 }
 
+/// This function converts screen-space to world-space
 fn update_world_cursor(
-    windows: Query<&Window, With<PrimaryWindow>>,
+    window_q: Query<&Window, With<PrimaryWindow>>,
     camera_q: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
     mut cursor: ResMut<WorldCursor>,
 ) {
-    let Ok(window) = windows.single() else {
-        cursor.in_window = false;
-        return;
-    };
+    cursor.in_window = false;
 
-    let Ok((camera, cam_transform)) = camera_q.single() else {
-        cursor.in_window = false;
-        return;
-    };
+    let Ok(window) = window_q.single() else { return; };
+    let Ok((camera, cam_transform)) = camera_q.single() else { return; };
+    let Some(screen_pos) = window.cursor_position() else { return; };
 
-    let Some(screen_pos) = window.cursor_position() else {
-        cursor.in_window = false;
-        return;
-    };
-
-    let Ok(world_pos) = camera.viewport_to_world_2d(cam_transform, screen_pos) else {
-        cursor.in_window = false;
-        return;
-    };
+    // screen-space to world-space
+    let Ok(world_pos) = camera.viewport_to_world_2d(cam_transform, screen_pos) else { return; };
 
     cursor.position = world_pos;
     cursor.in_window = true;
 }
 
+
+// this is a debug function, adds a circle
 fn add_circle(mut system: ResMut<FiksiSystem>) {
     let s = &mut system;
 
@@ -175,6 +170,7 @@ fn add_circle(mut system: ResMut<FiksiSystem>) {
     PointCircleIncidence::create(s, p0, circle);
 }
 
+// this function runs every frame? surely there is a better way to do this?
 fn point_tool_clicks(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     cursor: Res<WorldCursor>,
@@ -186,6 +182,7 @@ fn point_tool_clicks(
         return;
     }
 
+    // surely there is a better way to do this?
     if !mouse_buttons.just_pressed(MouseButton::Left) {
         return;
     }
