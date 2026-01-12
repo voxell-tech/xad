@@ -5,5 +5,6 @@ edition = "2024"
 
 [dependencies]
 bevy = "0.16.1"
+bevy_egui = "0.38.1"
 bevy_vello = "0.10.3"
 fiksi = { git = "https://github.com/nixonyh/fiksi", rev = "9832d2b07eef347ef90c510cfd96c62452d497de" }
