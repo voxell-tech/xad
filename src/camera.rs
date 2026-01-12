@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use crate::sdf::SdfMaterial;
+
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
@@ -7,7 +9,7 @@ impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(Startup, setup)
-            .add_systems(Update, update);
+            .add_systems(Update, (update_camera, update_canvas));
     }
 }
 
@@ -40,18 +42,33 @@ impl Default for Camera {
 // setup the camera
 fn setup(
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<SdfMaterial>>,
 ) {
-    commands.spawn((
+    let camera_entity = commands.spawn((
         Camera3d::default(),
-        Camera { // our camera
-            // todo: these initial transforms are arbitrary;
-            //  we should probably move them to a separate config file
-            ..default()
-        },
-    ));
+        Camera::default(),
+    )).id();
+
+    commands.entity(camera_entity).with_children(|parent| {
+        // this is the raymarching "canvas"
+        // the thing about modern rendering pipelines is that the fragment shader only runs on rasterized pixels (faces on vertices)
+        // as such, if we want every pixel to be calculated, we render a face that covers the entire viewport... 
+        parent.spawn((
+            Mesh3d(meshes.add(Rectangle::from_size(Vec2::splat(10.0)))),
+            MeshMaterial3d(materials.add(SdfMaterial { camera_pos: Vec3::ZERO.extend(1.0) })),
+            Transform {
+                translation: Vec3::new(0.0, 0.0, -1.0),
+                ..default()
+            },
+        ));
+    });
 }
 
-fn update(
+
+// this function updates the camera transforms based on input from the mouse
+// converts to spherical and then into cartesian
+fn update_camera(
     // mouse input i guess, i'd rather everything be handled in this class
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut mouse_motion: EventReader<bevy::input::mouse::MouseMotion>,
@@ -88,4 +105,34 @@ fn update(
     // apply transformation
     transform.translation = camera.target + Vec3::new(x, y, z);
     transform.look_at(camera.target, Vec3::Y);
+}
+
+
+// this function updates the screen-space canvas plane thing
+fn update_canvas(
+    window_q: Query<&Window>,
+    camera_q: Query<(&Transform, &Projection), With<Camera>>,
+    mut canvas_q: Query<&mut Transform, (With<MeshMaterial3d<SdfMaterial>>, Without<Camera>)>, // canvas
+    mut materials: ResMut<Assets<SdfMaterial>>,
+) {
+    // todo: THIS CONVENTION IS BAD PRACTICE, NEED TO CHANGE, CAUSES SILENT FAILURES!!!
+    let Ok(window) = window_q.single() else { return; };
+    let Ok((camera_transform, projection)) = camera_q.single() else { return; };
+    let Ok(mut canvas_transform) = canvas_q.single_mut() else { return; };
+
+    // update shader camera uniform 
+    for material in materials.iter_mut() {
+        // we only need the camera position for shader calculations
+        // direction is not needed; you can ask Marcel why
+        material.1.camera_pos = camera_transform.translation.extend(1.0);
+    }
+
+    // scale canvas to viewport
+    if let Projection::Perspective(persp) = projection {
+        let distance = canvas_transform.translation.z.abs();
+        let height = 2.0 * distance * (persp.fov / 2.0).tan();
+        let width = height * (window.width() / window.height());
+        
+        canvas_transform.scale = Vec3::new(width, height, 1.0);
+    }
 }
