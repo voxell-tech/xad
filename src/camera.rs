@@ -18,8 +18,8 @@ pub struct Camera {
     pub target: Vec3,
     
     pub radius: f32,
-    pub phi: f32, // radians
-    pub theta: f32, // radians
+    pub phi: f32, // degrees
+    pub theta: f32, // degrees
     
     pub sensitivity: f32, 
 }
@@ -32,7 +32,7 @@ impl Default for Camera {
             radius: 10.0,
             phi: 0.0,
             theta: 0.0,
-            sensitivity: 0.01,
+            sensitivity: 0.3,
         }
     }
 }
@@ -63,7 +63,7 @@ fn update(
     // handle input
     // scroll wheel zoom
     for event in mouse_wheel.read() {
-        camera.radius -= event.y * 1.5;
+        camera.radius -= event.y;
         camera.radius = camera.radius.clamp(1.0, 50.0);
     }
 
@@ -75,12 +75,17 @@ fn update(
         }
     }
     // clamp elevation
-    camera.theta = camera.theta.clamp(-1.54, 1.54);
+    camera.theta = camera.theta.clamp(-89.0, 89.0);
 
-    let x = camera.radius * camera.theta.cos() * camera.phi.sin();
-    let y = camera.radius * camera.theta.sin();
-    let z = camera.radius * camera.theta.cos() * camera.phi.cos();
+    // convert to cartesian
+    let phi_r = camera.phi.to_radians();
+    let theta_r = camera.theta.to_radians();
 
+    let x = camera.radius * theta_r.cos() * phi_r.sin();
+    let y = camera.radius * theta_r.sin();
+    let z = camera.radius * theta_r.cos() * phi_r.cos();
+
+    // apply transformation
     transform.translation = camera.target + Vec3::new(x, y, z);
     transform.look_at(camera.target, Vec3::Y);
 }
