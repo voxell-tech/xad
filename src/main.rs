@@ -1,445 +1,53 @@
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
-use bevy_vello::VelloPlugin;
-use bevy_vello::prelude::*;
-use bevy_vello::vello::peniko::Brush;
-use bevy_vello::vello::peniko::Fill;
-use fiksi::ElementValue;
-use fiksi::constraints::{LineCircleTangency, PointCircleIncidence};
-use fiksi::elements::Line;
-use fiksi::elements::Point as FiksiPoint;
-use fiksi::elements::{Circle, Length, Point};
-use fiksi::kurbo::Affine;
-use fiksi::{SolvingOptions, System};
 
-use crate::ui::*;
+pub mod camera;
 
-mod ui;
+// custom plugins here
+use camera::CameraPlugin;
 
 fn main() {
+    println!("Hello World!!");
+
     let mut app = App::new();
 
-    app.add_plugins((DefaultPlugins, VelloPlugin::default()));
+    // add plugins here
+    app
+        .add_plugins(DefaultPlugins)
+        .add_plugins(CameraPlugin);
 
-    app.init_resource::<FiksiSystem>()
-        .init_resource::<CadMode>()
-        .init_resource::<WorldCursor>()
-        .init_resource::<LineToolState>()
-        .init_resource::<CircleToolState>();
+    // add systems here
+    // each system should have it's own related subsystems, no need to bundle them in here 
+    app
+        .add_systems(Startup, setup)
+        .add_systems(Update ,exit_system);
 
-    // TODO: we should move the ui to its own dedicated plugin
-
-    app.add_systems(PreStartup, setup)
-        .add_systems(Startup, (toolbar, add_circle))
-        .add_systems(
-            Update,
-            (
-                update_mode_selection,
-                sync_mode_button_visuals,
-                update_world_cursor,
-                point_tool_clicks,
-                line_tool_clicks,
-                circle_tool_clicks,
-            ),
-        )
-        .add_systems(
-            PostUpdate,
-            (solve, render, line_preview_vello, circle_preview_vello).chain(),
-        );
+    // add resources here
 
     app.run();
 }
 
-#[derive(Resource, Default, Deref, DerefMut)]
-pub struct FiksiSystem(pub System);
-
-fn setup(mut commands: Commands) {
-    commands.spawn((Camera2d, VelloView));
-    commands.spawn(VelloScene::default());
-}
-
-fn solve(mut system: ResMut<FiksiSystem>, key_input: Res<ButtonInput<KeyCode>>) {
-    if key_input.just_pressed(KeyCode::Space) {
-        system.solve(SolvingOptions::DEFAULT);
-    }
-}
-
-fn toolbar(mut commands: Commands) {
+// THIS IS A PLACEHOLDER, FOR TESTING STUFF OUT
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
     commands.spawn((
-        Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            padding: UiRect::all(Val::Vh(4.0)),
-            margin: UiRect::all(Val::Vh(2.0)),
-            flex_direction: FlexDirection::Row,
-            ..default()
-        },
-        Children::spawn(Spawn(col((
-            Spawn((
-                button("Select"),
-                ModeButton {
-                    mode: CadMode::Select,
-                },
-            )),
-            Spawn((
-                button("Point"),
-                ModeButton {
-                    mode: CadMode::Point,
-                },
-            )),
-            Spawn((
-                button("Line"),
-                ModeButton {
-                    mode: CadMode::Line,
-                },
-            )),
-            Spawn((
-                button("Circle"),
-                ModeButton {
-                    mode: CadMode::Circle,
-                },
-            )),
-        )))),
+        Mesh3d(meshes.add(Cuboid::default())), 
+        MeshMaterial3d(materials.add(Color::WHITE)),
+    ));
+
+    commands.spawn((
+        PointLight::default(),
+        Transform::from_xyz(4.0, 8.0, 4.0),
     ));
 }
 
-/// Update the current CAD mode based on button presses.
-fn update_mode_selection(
-    mut q: Query<(&ModeButton, &Interaction), (Changed<Interaction>, With<Button>)>,
-    mut current_mode: ResMut<CadMode>,
+fn exit_system(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut exit: EventWriter<AppExit>
 ) {
-    for (mode_button, interaction) in &mut q {
-        if *interaction == Interaction::Pressed {
-            *current_mode = mode_button.mode;
-        }
+    if keyboard.just_pressed(KeyCode::Escape) {
+        exit.write(AppExit::Success);
     }
-}
-
-/// Temporarily change button visuals to indicate the current mode.
-// TODO: Replace with velyst.
-fn sync_mode_button_visuals(
-    current_mode: Res<CadMode>,
-    mut q: Query<(&ModeButton, &mut BackgroundColor)>,
-) {
-    if !current_mode.is_changed() {
-        return;
-    }
-
-    for (mode_button, mut bg) in &mut q {
-        if mode_button.mode == *current_mode {
-            bg.0 = Color::srgb(0.25, 0.5, 0.9);
-        } else {
-            bg.0 = Color::srgb(0.15, 0.15, 0.15);
-        }
-    }
-}
-
-/// This function converts screen-space to world-space
-fn update_world_cursor(
-    window_q: Query<&Window, With<PrimaryWindow>>,
-    camera_q: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
-    mut cursor: ResMut<WorldCursor>,
-) {
-    cursor.in_window = false;
-
-    let Ok(window) = window_q.single() else { return; };
-    let Ok((camera, cam_transform)) = camera_q.single() else { return; };
-    let Some(screen_pos) = window.cursor_position() else { return; };
-
-    // screen-space to world-space
-    let Ok(world_pos) = camera.viewport_to_world_2d(cam_transform, screen_pos) else { return; };
-
-    cursor.position = world_pos;
-    cursor.in_window = true;
-}
-
-
-// this is a debug function, adds a circle
-fn add_circle(mut system: ResMut<FiksiSystem>) {
-    let s = &mut system;
-
-    let p = Point::create(s, 30., -10.);
-    let r = Length::create(s, 50.0);
-    let circle = Circle::create(s, p, r);
-
-    let p0 = Point::create(s, -100.0, 0.0);
-    let p1 = Point::create(s, 0.0, 100.0);
-    let line = Line::create(s, p0, p1);
-
-    LineCircleTangency::create(s, line, circle);
-    PointCircleIncidence::create(s, p0, circle);
-}
-
-// this function runs every frame? surely there is a better way to do this?
-fn point_tool_clicks(
-    mouse_buttons: Res<ButtonInput<MouseButton>>,
-    cursor: Res<WorldCursor>,
-    mut system: ResMut<FiksiSystem>,
-    mode: Res<CadMode>,
-    ui_buttons: Query<&Interaction, With<Button>>,
-) {
-    if *mode != CadMode::Point {
-        return;
-    }
-
-    // surely there is a better way to do this?
-    if !mouse_buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-
-    if ui_buttons
-        .iter()
-        .any(|interaction| *interaction != Interaction::None)
-    {
-        return;
-    }
-
-    if !cursor.in_window {
-        return;
-    }
-
-    let pos = cursor.position;
-    let s = &mut *system;
-
-    FiksiPoint::create(s, pos.x as f64, -pos.y as f64);
-}
-
-fn line_tool_clicks(
-    mouse_buttons: Res<ButtonInput<MouseButton>>,
-    cursor: Res<WorldCursor>,
-    mut system: ResMut<FiksiSystem>,
-    mode: Res<CadMode>,
-    mut line_state: ResMut<LineToolState>,
-    ui_buttons: Query<&Interaction, With<Button>>,
-) {
-    if *mode != CadMode::Line {
-        return;
-    }
-
-    if !mouse_buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-
-    if ui_buttons
-        .iter()
-        .any(|interaction| *interaction != Interaction::None)
-    {
-        return;
-    }
-
-    if !cursor.in_window {
-        return;
-    }
-
-    let pos = cursor.position;
-    let s = &mut *system;
-
-    match line_state.start_pos {
-        None => {
-            line_state.start_pos = Some(pos);
-        }
-        Some(start) => {
-            let p0 = FiksiPoint::create(s, start.x as f64, -start.y as f64);
-            let p1 = FiksiPoint::create(s, pos.x as f64, -pos.y as f64);
-            Line::create(s, p0, p1);
-
-            line_state.start_pos = None;
-        }
-    }
-}
-
-fn line_preview_vello(
-    mut q_scenes: Query<&mut VelloScene>,
-    line_state: Res<LineToolState>,
-    cursor: Res<WorldCursor>,
-    mode: Res<CadMode>,
-) -> Result {
-    if *mode != CadMode::Line {
-        return Ok(());
-    }
-
-    let Some(start) = line_state.start_pos else {
-        return Ok(());
-    };
-
-    if !cursor.in_window {
-        return Ok(());
-    }
-
-    let mut scene = q_scenes.single_mut()?;
-
-    let white_brush = Brush::Solid(peniko::Color::WHITE);
-    let preview_stroke = kurbo::Stroke::new(1.0);
-
-    let start_point = kurbo::Point::new(start.x as f64, -start.y as f64);
-    let end_point = kurbo::Point::new(cursor.position.x as f64, -cursor.position.y as f64);
-
-    let preview_line = kurbo::Line::new(start_point, end_point);
-
-    scene.stroke(
-        &preview_stroke,
-        Affine::IDENTITY,
-        &white_brush,
-        None,
-        &preview_line,
-    );
-
-    Ok(())
-}
-
-fn circle_tool_clicks(
-    mouse_buttons: Res<ButtonInput<MouseButton>>,
-    cursor: Res<WorldCursor>,
-    mut system: ResMut<FiksiSystem>,
-    mode: Res<CadMode>,
-    mut circle_state: ResMut<CircleToolState>,
-    ui_buttons: Query<&Interaction, With<Button>>,
-) {
-    if *mode != CadMode::Circle {
-        return;
-    }
-
-    if !mouse_buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-
-    if ui_buttons
-        .iter()
-        .any(|interaction| *interaction != Interaction::None)
-    {
-        return;
-    }
-
-    if !cursor.in_window {
-        return;
-    }
-
-    let pos = cursor.position;
-    let s = &mut *system;
-
-    match circle_state.center_pos {
-        None => {
-            circle_state.center_pos = Some(pos);
-        }
-        Some(center) => {
-            let radius = (pos - center).length();
-
-            if radius > 0.0 {
-                let center_point = FiksiPoint::create(s, center.x as f64, -center.y as f64);
-                let radius_length = Length::create(s, radius as f64);
-                Circle::create(s, center_point, radius_length);
-            }
-
-            circle_state.center_pos = None;
-        }
-    }
-}
-
-fn circle_preview_vello(
-    mut q_scenes: Query<&mut VelloScene>,
-    circle_state: Res<CircleToolState>,
-    cursor: Res<WorldCursor>,
-    mode: Res<CadMode>,
-) -> Result {
-    if *mode != CadMode::Circle {
-        return Ok(());
-    }
-
-    let Some(center) = circle_state.center_pos else {
-        return Ok(());
-    };
-
-    if !cursor.in_window {
-        return Ok(());
-    }
-
-    let mut scene = q_scenes.single_mut()?;
-
-    let white_brush = Brush::Solid(peniko::Color::WHITE);
-    let preview_stroke = kurbo::Stroke::new(1.0);
-
-    let center_point = kurbo::Point::new(center.x as f64, -center.y as f64);
-    let radius = (cursor.position - center).length() as f64;
-
-    if radius > 0.0 {
-        let preview_circle = kurbo::Circle::new(center_point, radius);
-
-        scene.stroke(
-            &preview_stroke,
-            Affine::IDENTITY,
-            &white_brush,
-            None,
-            &preview_circle,
-        );
-    }
-
-    Ok(())
-}
-
-fn render(mut q_scenes: Query<&mut VelloScene>, system: Res<FiksiSystem>) -> Result {
-    let stroke = kurbo::Stroke::new(2.0);
-    let white_brush = Brush::Solid(peniko::Color::WHITE);
-    // let black_brush = Brush::Solid(peniko::Color::BLACK);
-
-    let mut scene = q_scenes.single_mut()?;
-    *scene = vello::Scene::new().into();
-
-    for el in system.get_element_handles() {
-        let val = el.get_value(&system);
-        match val {
-            // fiksi::ElementValue::Length(_) => todo!(),
-            ElementValue::Point(point) => scene.fill(
-                Fill::NonZero,
-                Affine::IDENTITY,
-                &white_brush,
-                None,
-                &kurbo::Rect::from_center_size(point, (4.0, 4.0)),
-            ),
-            ElementValue::Line(line) => {
-                scene.stroke(&stroke, Affine::IDENTITY, &white_brush, None, &line)
-            }
-            ElementValue::Circle(circle) => {
-                scene.stroke(&stroke, Affine::IDENTITY, &white_brush, None, &circle)
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
-}
-
-/// Indicate which tool is currently active.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CadMode {
-    Select,
-    Point,
-    Line,
-    Circle,
-}
-
-impl Default for CadMode {
-    fn default() -> Self {
-        CadMode::Select
-    }
-}
-
-#[derive(Component)]
-struct ModeButton {
-    mode: CadMode,
-}
-
-#[derive(Resource, Default)]
-struct WorldCursor {
-    position: Vec2,
-    in_window: bool,
-}
-
-#[derive(Resource, Default)]
-struct LineToolState {
-    start_pos: Option<Vec2>,
-}
-
-#[derive(Resource, Default)]
-struct CircleToolState {
-    center_pos: Option<Vec2>,
 }
