@@ -65,6 +65,9 @@ fn setup(
     });
 }
 
+
+// this function updates the camera transforms based on input from the mouse
+// converts to spherical and then into cartesian
 fn update_camera(
     // mouse input i guess, i'd rather everything be handled in this class
     mouse_buttons: Res<ButtonInput<MouseButton>>,
@@ -104,6 +107,8 @@ fn update_camera(
     transform.look_at(camera.target, Vec3::Y);
 }
 
+
+// this function updates the screen-space canvas plane thing
 fn update_canvas(
     window_q: Query<&Window>,
     camera_q: Query<(&Transform, &Projection), With<Camera>>,
@@ -118,6 +123,7 @@ fn update_canvas(
     // update shader camera uniform 
     for material in materials.iter_mut() {
         // we only need the camera position for shader calculations
+        // direction is not needed; you can ask Marcel why
         material.1.camera_pos = camera_transform.translation.extend(1.0);
     }
 

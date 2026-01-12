@@ -21,7 +21,7 @@ pub struct SdfMaterial {
     // this is so stupid; we need to use vec4 to match 16-byte required alignment??
     // todo: need to look into this more, surely there is a better way?
     #[uniform(0)]
-    pub camera_pos: Vec4, 
+    pub camera_pos: Vec4, // 16 bytes
 
     // when we need to pass more uniforms into the SDF shader,
     //  add them here
