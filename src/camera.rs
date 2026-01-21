@@ -6,8 +6,10 @@ pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(Update, (update_camera, update_canvas));
+        app.add_systems(Startup, setup).add_systems(
+            Update,
+            (update_camera, update_canvas).chain(),
+        );
     }
 }
 
@@ -15,7 +17,7 @@ impl Plugin for CameraPlugin {
 ///
 /// <https://en.wikipedia.org/wiki/Spherical_coordinate_system>
 #[derive(Component)]
-pub struct Camera {
+pub struct SdfCamera {
     pub target: Vec3,
 
     pub radius: f32,
@@ -25,12 +27,12 @@ pub struct Camera {
     pub sensitivity: f32,
 }
 
-impl Default for Camera {
+impl Default for SdfCamera {
     // these are the default values for our camera
     fn default() -> Self {
         Self {
             target: Vec3::ZERO,
-            radius: 10.0,
+            radius: 30.0,
             phi: 0.0,
             theta: 0.0,
             sensitivity: 0.3,
@@ -43,28 +45,36 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<SdfMaterial>>,
+    mut std_materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let camera_entity = commands
-        .spawn((Camera3d::default(), Camera::default()))
-        .id();
+    commands
+        .spawn((Camera3d::default(), SdfCamera::default()))
+        .with_children(|parent| {
+            // This is the raymarching "canvas"
+            // the thing about modern rendering pipelines is that the fragment shader only runs on rasterized pixels (faces on vertices)
+            // as such, if we want every pixel to be calculated, we render a face that covers the entire viewport...
+            parent.spawn((
+                Mesh3d(
+                    meshes
+                        .add(Rectangle::from_size(Vec2::splat(0.5))),
+                ),
+                MeshMaterial3d(materials.add(SdfMaterial {
+                    camera_pos: Vec3::ZERO.extend(1.0),
+                })),
+                Transform {
+                    translation: Vec3::new(0.0, 0.0, -1.0),
+                    ..default()
+                },
+            ));
+        });
 
-    commands.entity(camera_entity).with_children(|parent| {
-        // this is the raymarching "canvas"
-        // the thing about modern rendering pipelines is that the fragment shader only runs on rasterized pixels (faces on vertices)
-        // as such, if we want every pixel to be calculated, we render a face that covers the entire viewport...
-        parent.spawn((
-            Mesh3d(
-                meshes.add(Rectangle::from_size(Vec2::splat(10.0))),
-            ),
-            MeshMaterial3d(materials.add(SdfMaterial {
-                camera_pos: Vec3::ZERO.extend(1.0),
-            })),
-            Transform {
-                translation: Vec3::new(0.0, 0.0, -1.0),
-                ..default()
-            },
-        ));
-    });
+    // Debug view of how the cube should look like now...
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        MeshMaterial3d(
+            std_materials.add(StandardMaterial::default()),
+        ),
+    ));
 }
 
 // this function updates the camera transforms based on input from the mouse
@@ -72,9 +82,9 @@ fn setup(
 fn update_camera(
     // mouse input i guess, i'd rather everything be handled in this class
     mouse_buttons: Res<ButtonInput<MouseButton>>,
-    mut mouse_motion: EventReader<bevy::input::mouse::MouseMotion>,
-    mut mouse_wheel: EventReader<bevy::input::mouse::MouseWheel>,
-    mut query: Query<(&mut Transform, &mut Camera)>,
+    mut mouse_motion: MessageReader<bevy::input::mouse::MouseMotion>,
+    mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
+    mut query: Query<(&mut Transform, &mut SdfCamera)>,
 ) {
     let Ok((mut transform, mut camera)) = query.single_mut() else {
         return;
@@ -113,10 +123,10 @@ fn update_camera(
 // this function updates the screen-space canvas plane thing
 fn update_canvas(
     window_q: Query<&Window>,
-    camera_q: Query<(&Transform, &Projection), With<Camera>>,
+    camera_q: Query<(&GlobalTransform, &Projection), With<SdfCamera>>,
     mut canvas_q: Query<
         &mut Transform,
-        (With<MeshMaterial3d<SdfMaterial>>, Without<Camera>),
+        (With<MeshMaterial3d<SdfMaterial>>, Without<SdfCamera>),
     >, // canvas
     mut materials: ResMut<Assets<SdfMaterial>>,
 ) {
@@ -132,11 +142,11 @@ fn update_canvas(
     };
 
     // update shader camera uniform
-    for material in materials.iter_mut() {
+    for (_, material) in materials.iter_mut() {
         // we only need the camera position for shader calculations
         // direction is not needed; you can ask Marcel why
-        material.1.camera_pos =
-            camera_transform.translation.extend(1.0);
+        material.camera_pos =
+            camera_transform.translation().extend(1.0);
     }
 
     // scale canvas to viewport

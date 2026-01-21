@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::*;
+use bevy::shader::ShaderRef;
 
 pub struct SdfPlugin;
 

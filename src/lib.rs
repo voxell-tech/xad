@@ -20,7 +20,7 @@ impl Plugin for XadPlugin {
 
 fn exit_system(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
         exit.write(AppExit::Success);
