@@ -13,15 +13,13 @@ fn main() {
     let mut app = App::new();
 
     // add plugins here
-    app
-        .add_plugins(DefaultPlugins)
+    app.add_plugins(DefaultPlugins)
         .add_plugins(CameraPlugin)
         .add_plugins(SdfPlugin);
 
     // add systems here
-    // each system should have it's own related subsystems, no need to bundle them in here 
-    app
-        .add_systems(Update ,exit_system);
+    // each system should have it's own related subsystems, no need to bundle them in here
+    app.add_systems(Update, exit_system);
 
     // add resources here
 
@@ -30,7 +28,7 @@ fn main() {
 
 fn exit_system(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut exit: EventWriter<AppExit>
+    mut exit: EventWriter<AppExit>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
         exit.write(AppExit::Success);
