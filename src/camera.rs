@@ -5,22 +5,21 @@ use crate::sdf::SdfMaterial;
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
-    // this is a required override from the base class :)
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
             .add_systems(Update, (update_camera, update_canvas));
     }
 }
 
+/// Trackball camera, using the UEN convention.
+/// [https://en.wikipedia.org/wiki/Spherical_coordinate_system]
 #[derive(Component)]
 pub struct Camera {
-    // this is a trackball camera, using the UEN convention
-    // https://en.wikipedia.org/wiki/Spherical_coordinate_system
     pub target: Vec3,
 
     pub radius: f32,
-    pub phi: f32,   // degrees
-    pub theta: f32, // degrees
+    pub phi: f32,   // Degrees
+    pub theta: f32, // Degrees
 
     pub sensitivity: f32,
 }
@@ -38,7 +37,7 @@ impl Default for Camera {
     }
 }
 
-// setup the camera
+/// Setup the camera.
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
