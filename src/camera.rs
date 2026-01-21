@@ -12,7 +12,8 @@ impl Plugin for CameraPlugin {
 }
 
 /// Trackball camera, using the UEN convention.
-/// [https://en.wikipedia.org/wiki/Spherical_coordinate_system]
+///
+/// <https://en.wikipedia.org/wiki/Spherical_coordinate_system>
 #[derive(Component)]
 pub struct Camera {
     pub target: Vec3,
