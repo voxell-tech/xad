@@ -5,8 +5,7 @@ pub struct SdfPlugin;
 
 impl Plugin for SdfPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .add_plugins(MaterialPlugin::<SdfMaterial>::default());
+        app.add_plugins(MaterialPlugin::<SdfMaterial>::default());
     }
 }
 
@@ -14,7 +13,7 @@ impl Plugin for SdfPlugin {
 pub struct SdfMaterial {
     // shader uniforms are variables that get passed to the GPU
     // we handle these in the shader
-    
+
     // #[uniform(0)]
     // pub camera_pos: Vec3,
 
@@ -23,8 +22,8 @@ pub struct SdfMaterial {
     #[uniform(0)]
     pub camera_pos: Vec4, // 16 bytes
 
-    // when we need to pass more uniforms into the SDF shader,
-    //  add them here
+                          // when we need to pass more uniforms into the SDF shader,
+                          //  add them here
 }
 
 impl Material for SdfMaterial {
