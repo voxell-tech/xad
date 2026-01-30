@@ -1,14 +1,15 @@
-// this is a basic SDF shader
-// feel free to experiment
+// This is a basic SDF shader, feel free to experiment.
+
+#import bevy_pbr::forward_io::VertexOutput
 
 struct SdfMaterial {
     camera_pos: vec4f,
 };
 
-@group(2) @binding(0)
+@group(0) @binding(0)
 var<uniform> material: SdfMaterial;
 
-// define SDFs here
+// Define SDFs here.
 // https://iquilezles.org/articles/distfunctions/
 fn sdRoundCone(p: vec3f, r1: f32, r2: f32, h: f32) -> f32 {
     let b = (r1 - r2) / h;
@@ -47,15 +48,17 @@ fn calculate_normal(p: vec3f) -> vec3f {
     ));
 }
 
-// main fragment shader
-// wgsl moment D:
+// Main fragment shader.
 @fragment
 fn fragment(
-    @location(0) world_position: vec4f,
-    @location(2) uv: vec2f,
+    mesh: VertexOutput,
+    // @location(0) world_position: vec4f,
 ) -> @location(0) vec4f {
-    let ray_dir = normalize(world_position.xyz - material.camera_pos.xyz);
+    let ray_dir = normalize(mesh.world_position.xyz - material.camera_pos.xyz);
+    // return vec4f(mesh.uv, 0.0, 0.0);
+    // return vec4f(ray_dir, 0.0);
     var t = 0.0;
+    var dist = 0.0;
     
     // step size is here
     for (var i = 0; i < 256; i++) {
@@ -72,8 +75,10 @@ fn fragment(
         }
         
         t += d;
+        dist = d;
         if t > 20.0 { break; }
     }
 
-    return vec4f(1.0, 1.0, 1.0, 1.0); // background
+    return vec4f(dist / 20.0);
+    return vec4f(0.1, 0.1, 0.1, 1.0); // background
 }

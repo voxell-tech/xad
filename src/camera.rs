@@ -1,13 +1,13 @@
 use bevy::prelude::*;
 
-use crate::sdf::SdfMaterial;
+use crate::sdf::SdfFullscreenMaterial;
 
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(Update, (update_camera, update_canvas));
+            .add_systems(Update, update_camera);
     }
 }
 
@@ -15,22 +15,19 @@ impl Plugin for CameraPlugin {
 ///
 /// <https://en.wikipedia.org/wiki/Spherical_coordinate_system>
 #[derive(Component)]
-pub struct Camera {
+pub struct SdfCamera {
     pub target: Vec3,
-
     pub radius: f32,
-    pub phi: f32,   // Degrees
-    pub theta: f32, // Degrees
-
+    pub phi: f32,   // Azimuth in degrees
+    pub theta: f32, // Elevation in degrees
     pub sensitivity: f32,
 }
 
-impl Default for Camera {
-    // these are the default values for our camera
+impl Default for SdfCamera {
     fn default() -> Self {
         Self {
             target: Vec3::ZERO,
-            radius: 10.0,
+            radius: 5.0,
             phi: 0.0,
             theta: 0.0,
             sensitivity: 0.3,
@@ -38,113 +35,66 @@ impl Default for Camera {
     }
 }
 
-/// Setup the camera.
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<SdfMaterial>>,
-) {
-    let camera_entity = commands
-        .spawn((Camera3d::default(), Camera::default()))
-        .id();
-
-    commands.entity(camera_entity).with_children(|parent| {
-        // this is the raymarching "canvas"
-        // the thing about modern rendering pipelines is that the fragment shader only runs on rasterized pixels (faces on vertices)
-        // as such, if we want every pixel to be calculated, we render a face that covers the entire viewport...
-        parent.spawn((
-            Mesh3d(
-                meshes.add(Rectangle::from_size(Vec2::splat(10.0))),
-            ),
-            MeshMaterial3d(materials.add(SdfMaterial {
-                camera_pos: Vec3::ZERO.extend(1.0),
-            })),
-            Transform {
-                translation: Vec3::new(0.0, 0.0, -1.0),
-                ..default()
-            },
-        ));
-    });
+fn setup(mut commands: Commands) {
+    // Camera3d with the FullscreenMaterial component
+    // The SdfFullscreenMaterial runs as a post-process, overwriting the (empty) 3D scene
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_translation(Vec3::new(0.0, 0.0, 5.0))
+            .looking_at(Vec3::ZERO, Vec3::Y),
+        SdfCamera::default(),
+        SdfFullscreenMaterial::default(),
+    ));
 }
 
-// this function updates the camera transforms based on input from the mouse
-// converts to spherical and then into cartesian
 fn update_camera(
-    // mouse input i guess, i'd rather everything be handled in this class
+    window_q: Query<&Window>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
-    mut mouse_motion: EventReader<bevy::input::mouse::MouseMotion>,
-    mut mouse_wheel: EventReader<bevy::input::mouse::MouseWheel>,
-    mut query: Query<(&mut Transform, &mut Camera)>,
+    mut mouse_motion: MessageReader<bevy::input::mouse::MouseMotion>,
+    mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
+    mut query: Query<(&mut SdfCamera, &mut SdfFullscreenMaterial)>,
 ) {
-    let Ok((mut transform, mut camera)) = query.single_mut() else {
+    let Ok(window) = window_q.single() else {
+        return;
+    };
+    let Ok((mut camera, mut material)) = query.single_mut() else {
         return;
     };
 
-    // handle input
-    // scroll wheel zoom
+    // Zoom
     for event in mouse_wheel.read() {
-        camera.radius -= event.y;
+        camera.radius -= event.y * 0.5;
         camera.radius = camera.radius.clamp(1.0, 50.0);
     }
 
-    // we only want to rotate when the mouse is held
+    // Rotate
     if mouse_buttons.pressed(MouseButton::Right) {
         for event in mouse_motion.read() {
             camera.phi -= event.delta.x * camera.sensitivity;
             camera.theta += event.delta.y * camera.sensitivity;
         }
     }
-    // clamp elevation
+
+    // Clamp elevation
     camera.theta = camera.theta.clamp(-89.0, 89.0);
 
-    // convert to cartesian
+    // Convert spherical to Cartesian
     let phi_r = camera.phi.to_radians();
-    let theta_r = camera.theta.to_radians();
+    let theta_r = -camera.theta.to_radians();
 
     let x = camera.radius * theta_r.cos() * phi_r.sin();
     let y = camera.radius * theta_r.sin();
     let z = camera.radius * theta_r.cos() * phi_r.cos();
 
-    // apply transformation
-    transform.translation = camera.target + Vec3::new(x, y, z);
-    transform.look_at(camera.target, Vec3::Y);
-}
+    let camera_pos = camera.target + Vec3::new(x, y, z);
+    let camera_dir = (camera.target - camera_pos).normalize();
+    let camera_right = camera_dir.cross(Vec3::Y).normalize();
+    let camera_up = camera_right.cross(camera_dir).normalize();
 
-// this function updates the screen-space canvas plane thing
-fn update_canvas(
-    window_q: Query<&Window>,
-    camera_q: Query<(&Transform, &Projection), With<Camera>>,
-    mut canvas_q: Query<
-        &mut Transform,
-        (With<MeshMaterial3d<SdfMaterial>>, Without<Camera>),
-    >, // canvas
-    mut materials: ResMut<Assets<SdfMaterial>>,
-) {
-    // todo: THIS CONVENTION IS BAD PRACTICE, NEED TO CHANGE, CAUSES SILENT FAILURES!!!
-    let Ok(window) = window_q.single() else {
-        return;
-    };
-    let Ok((camera_transform, projection)) = camera_q.single() else {
-        return;
-    };
-    let Ok(mut canvas_transform) = canvas_q.single_mut() else {
-        return;
-    };
-
-    // update shader camera uniform
-    for material in materials.iter_mut() {
-        // we only need the camera position for shader calculations
-        // direction is not needed; you can ask Marcel why
-        material.1.camera_pos =
-            camera_transform.translation.extend(1.0);
-    }
-
-    // scale canvas to viewport
-    if let Projection::Perspective(persp) = projection {
-        let distance = canvas_transform.translation.z.abs();
-        let height = 2.0 * distance * (persp.fov / 2.0).tan();
-        let width = height * (window.width() / window.height());
-
-        canvas_transform.scale = Vec3::new(width, height, 1.0);
-    }
+    // Update the fullscreen material uniforms
+    material.camera_pos = camera_pos.extend(1.0);
+    material.camera_dir = camera_dir.extend(0.0);
+    material.camera_up = camera_up.extend(0.0);
+    material.resolution = Vec2::new(window.width(), window.height());
+    material.fov = std::f32::consts::FRAC_PI_4;
 }
