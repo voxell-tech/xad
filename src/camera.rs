@@ -40,7 +40,8 @@ fn setup(mut commands: Commands) {
     // The SdfFullscreenMaterial runs as a post-process, overwriting the (empty) 3D scene
     commands.spawn((
         Camera3d::default(),
-        Transform::from_translation(Vec3::new(0.0, 0.0, 5.0)).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_translation(Vec3::new(0.0, 0.0, 5.0))
+            .looking_at(Vec3::ZERO, Vec3::Y),
         SdfCamera::default(),
         SdfFullscreenMaterial::default(),
     ));

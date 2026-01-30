@@ -1,5 +1,7 @@
 use bevy::core_pipeline::core_3d::graph::Node3d;
-use bevy::core_pipeline::fullscreen_material::{FullscreenMaterial, FullscreenMaterialPlugin};
+use bevy::core_pipeline::fullscreen_material::{
+    FullscreenMaterial, FullscreenMaterialPlugin,
+};
 use bevy::prelude::*;
 use bevy::render::extract_component::ExtractComponent;
 use bevy::render::render_graph::{InternedRenderLabel, RenderLabel};
@@ -10,11 +12,21 @@ pub struct SdfPlugin;
 
 impl Plugin for SdfPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(FullscreenMaterialPlugin::<SdfFullscreenMaterial>::default());
+        app.add_plugins(FullscreenMaterialPlugin::<
+            SdfFullscreenMaterial,
+        >::default());
     }
 }
 
-#[derive(Component, ExtractComponent, Clone, Copy, Debug, ShaderType, Default)]
+#[derive(
+    Component,
+    ExtractComponent,
+    Clone,
+    Copy,
+    Debug,
+    ShaderType,
+    Default,
+)]
 pub struct SdfFullscreenMaterial {
     pub camera_pos: Vec4,
     pub camera_dir: Vec4,
