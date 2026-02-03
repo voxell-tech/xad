@@ -1,13 +1,16 @@
 use bevy::core_pipeline::FullscreenShader;
 use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
 use bevy::ecs::query::QueryItem;
+use bevy::ecs::system::lifetimeless::Read;
 use bevy::prelude::*;
 use bevy::render::extract_component::*;
 use bevy::render::render_graph::*;
 use bevy::render::render_resource::binding_types::*;
 use bevy::render::render_resource::*;
 use bevy::render::renderer::{RenderContext, RenderDevice};
-use bevy::render::view::ViewTarget;
+use bevy::render::view::{
+    ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms,
+};
 use bevy::render::{RenderApp, RenderStartup};
 
 const SHADER_ASSET_PATH: &str = "shaders/sdf_fullscreen.wgsl";
@@ -80,18 +83,19 @@ pub struct SdfNode;
 
 impl ViewNode for SdfNode {
     type ViewQuery = (
-        &'static ViewTarget,
-        &'static SdfCamera,
+        Read<ViewTarget>,
+        Read<SdfCamera>,
         // As there could be multiple post processing components sent to the GPU (one per camera),
         // we need to get the index of the one that is associated with the current view.
-        &'static DynamicUniformIndex<SdfCamera>,
+        Read<DynamicUniformIndex<SdfCamera>>,
+        Read<ViewUniformOffset>,
     );
 
     fn run<'w>(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (view_target, _, settings_index): QueryItem<
+        (view_target, _, sdf_index, view_offset): QueryItem<
             'w,
             '_,
             Self::ViewQuery,
@@ -115,10 +119,16 @@ impl ViewNode for SdfNode {
         };
 
         // Get the settings uniform binding
-        let settings_uniforms =
-            world.resource::<ComponentUniforms<SdfCamera>>();
-        let Some(settings_binding) =
-            settings_uniforms.uniforms().binding()
+        let Some(sdf_camera) = world
+            .resource::<ComponentUniforms<SdfCamera>>()
+            .uniforms()
+            .binding()
+        else {
+            return Ok(());
+        };
+
+        let Some(view_uniforms) =
+            world.resource::<ViewUniforms>().uniforms.binding()
         else {
             return Ok(());
         };
@@ -150,8 +160,10 @@ impl ViewNode for SdfNode {
                     post_process.source,
                     // Use the sampler created for the pipeline
                     &sdf_pipeline.sampler,
-                    // Set the settings binding
-                    settings_binding.clone(),
+                    // Set the `SdfCamera` binding
+                    sdf_camera.clone(),
+                    // Set the `ViewUniforms` binding
+                    view_uniforms,
                 )),
             );
 
@@ -183,7 +195,7 @@ impl ViewNode for SdfNode {
         render_pass.set_bind_group(
             0,
             &bind_group,
-            &[settings_index.index()],
+            &[sdf_index.index(), view_offset.offset],
         );
         render_pass.draw(0..3, 0..1);
 
@@ -221,6 +233,7 @@ fn init_sdf_pipeline(
                 sampler(SamplerBindingType::Filtering),
                 // The settings uniform that will control the effect
                 uniform_buffer::<SdfCamera>(true),
+                uniform_buffer::<ViewUniform>(true),
             ),
         ),
     );
@@ -258,54 +271,14 @@ fn init_sdf_pipeline(
     });
 }
 
-#[derive(
-    Component, Clone, Copy, ExtractComponent, ShaderType, Default,
-)]
+#[derive(Component, Clone, Copy, ExtractComponent, ShaderType)]
 pub struct SdfCamera {
-    // /// Max raymarch steps. Defaults to 128.
-    // pub max_step: u32,
-    pub camera_pos: Vec4,
-    pub camera_dir: Vec4,
-    pub camera_up: Vec4,
-    pub resolution: Vec2,
-    pub fov: f32,
+    /// Max raymarch steps. Defaults to 128.
+    pub max_step: u32,
 }
 
-// impl Default for SdfCamera {
-//     fn default() -> Self {
-//         Self { max_step: 128 }
-//     }
-// }
-
-// /// Set up a simple 3D scene
-// fn setup(
-//     mut commands: Commands,
-//     mut meshes: ResMut<Assets<Mesh>>,
-//     mut materials: ResMut<Assets<StandardMaterial>>,
-// ) {
-//     // camera
-//     commands.spawn((
-//         Camera3d::default(),
-//         Transform::from_translation(Vec3::new(0.0, 0.0, 5.0))
-//             .looking_at(Vec3::default(), Vec3::Y),
-//         Camera {
-//             clear_color: Color::WHITE.into(),
-//             ..default()
-//         },
-//         // Add the setting to the camera.
-//         // This component is also used to determine on which camera to run the post processing effect.
-//         SdfCamera { intensity: 0.02 },
-//     ));
-
-//     // cube
-//     commands.spawn((
-//         Mesh3d(meshes.add(Cuboid::default())),
-//         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
-//         Transform::from_xyz(0.0, 0.5, 0.0),
-//     ));
-//     // light
-//     commands.spawn(DirectionalLight {
-//         illuminance: 1_000.,
-//         ..default()
-//     });
-// }
+impl Default for SdfCamera {
+    fn default() -> Self {
+        Self { max_step: 128 }
+    }
+}

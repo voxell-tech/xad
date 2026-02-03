@@ -2,8 +2,6 @@ use bevy::prelude::*;
 
 use crate::sdf::SdfCamera;
 
-// use crate::sdf::SdfFullscreenMaterial;
-
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
@@ -17,7 +15,7 @@ impl Plugin for CameraPlugin {
 ///
 /// <https://en.wikipedia.org/wiki/Spherical_coordinate_system>
 #[derive(Component)]
-pub struct SdfCameraController {
+pub struct CameraController {
     pub target: Vec3,
     pub radius: f32,
     pub phi: f32,   // Azimuth in degrees
@@ -25,11 +23,11 @@ pub struct SdfCameraController {
     pub sensitivity: f32,
 }
 
-impl Default for SdfCameraController {
+impl Default for CameraController {
     fn default() -> Self {
         Self {
             target: Vec3::ZERO,
-            radius: 5.0,
+            radius: 10.0,
             phi: 0.0,
             theta: 0.0,
             sensitivity: 0.3,
@@ -38,28 +36,23 @@ impl Default for SdfCameraController {
 }
 
 fn setup(mut commands: Commands) {
-    // Camera3d with the FullscreenMaterial component
-    // The SdfFullscreenMaterial runs as a post-process, overwriting the (empty) 3D scene
+    // Spawn SDF camera.
     commands.spawn((
         Camera3d::default(),
         Transform::from_translation(Vec3::new(0.0, 0.0, 5.0))
             .looking_at(Vec3::ZERO, Vec3::Y),
-        SdfCameraController::default(),
+        CameraController::default(),
         SdfCamera::default(),
     ));
 }
 
 fn update_camera(
-    window_q: Query<&Window>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut mouse_motion: MessageReader<bevy::input::mouse::MouseMotion>,
     mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
-    mut query: Query<(&mut SdfCameraController, &mut SdfCamera)>,
+    mut query: Query<(&mut CameraController, &mut Transform)>,
 ) {
-    let Ok(window) = window_q.single() else {
-        return;
-    };
-    let Ok((mut camera, mut uniform)) = query.single_mut() else {
+    let Ok((mut camera, mut transform)) = query.single_mut() else {
         return;
     };
 
@@ -88,15 +81,6 @@ fn update_camera(
     let y = camera.radius * theta_r.sin();
     let z = camera.radius * theta_r.cos() * phi_r.cos();
 
-    let camera_pos = camera.target + Vec3::new(x, y, z);
-    let camera_dir = (camera.target - camera_pos).normalize();
-    let camera_right = camera_dir.cross(Vec3::Y).normalize();
-    let camera_up = camera_right.cross(camera_dir).normalize();
-
-    // Update the fullscreen material uniforms
-    uniform.camera_pos = camera_pos.extend(1.0);
-    uniform.camera_dir = camera_dir.extend(0.0);
-    uniform.camera_up = camera_up.extend(0.0);
-    uniform.resolution = Vec2::new(window.width(), window.height());
-    uniform.fov = std::f32::consts::FRAC_PI_4;
+    transform.translation = camera.target + Vec3::new(x, y, z);
+    transform.look_at(camera.target, Vec3::Y);
 }

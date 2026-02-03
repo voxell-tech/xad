@@ -2,18 +2,16 @@
 // Note: bindings 0 and 1 are reserved for screen_texture/sampler (we ignore them)
 
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
+#import bevy_render::view::View;
 
 struct SdfCamera {
-    camera_pos: vec4f,
-    camera_dir: vec4f,
-    camera_up: vec4f,
-    resolution: vec2f,
-    fov: f32,
+    max_step: u32,
 };
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
-@group(0) @binding(2) var<uniform> uniforms: SdfCamera;
+@group(0) @binding(2) var<uniform> sdf_camera: SdfCamera;
+@group(0) @binding(3) var<uniform> view: View;
 
 // SDF primitives - https://iquilezles.org/articles/distfunctions/
 fn sd_sphere(p: vec3f, r: f32) -> f32 {
@@ -69,7 +67,7 @@ fn calc_soft_shadow(ro: vec3f, rd: vec3f, mint: f32, maxt: f32, k: f32) -> f32 {
     return clamp(res, 0.0, 1.0);
 }
 
-// Ambient occlusion
+/// Ambient occlusion.
 fn calc_ao(pos: vec3f, nor: vec3f) -> f32 {
     var occ = 0.0;
     var sca = 1.0;
@@ -84,30 +82,44 @@ fn calc_ao(pos: vec3f, nor: vec3f) -> f32 {
 
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
-    // Convert UV [0,1] to NDC [-1,1]
-    let uv = in.uv * 2.0 - 1.0;
+    // Convert UV [0,1] to NDC [-1,1].
+    let ndc = in.uv * 2.0 - 1.0;
 
-    // Calculate aspect ratio
-    let aspect = uniforms.resolution.x / uniforms.resolution.y;
+    let ray_origin = view.world_position;
 
-    // Build camera ray
-    let camera_right = normalize(cross(uniforms.camera_dir.xyz, uniforms.camera_up.xyz));
-    let camera_up = normalize(cross(camera_right, uniforms.camera_dir.xyz));
+    // Calculate ray direction using the `world_from_clip` matrix.
+    // We pick a point on the far plane (z = 0.0 in reverse-z, or 1.0 in standard)
+    // For hit-testing, any Z works as long as we normalize the resulting vector.
+    let target_clip = vec4f(ndc, 1.0, 1.0); 
+    let target_world_homogenous = view.world_from_clip * target_clip;
+    let target_world = target_world_homogenous.xyz / target_world_homogenous.w;
 
-    let fov_scale = tan(uniforms.fov);
-    let ray_dir = normalize(
-        uniforms.camera_dir.xyz +
-        uv.x * aspect * fov_scale * camera_right +
-        uv.y * fov_scale * camera_up
-    );
+    let ray_dir = normalize(target_world - ray_origin);
 
-    let ray_origin = uniforms.camera_pos.xyz;
+    // // Convert UV [0,1] to NDC [-1,1]
+    // let uv = in.uv * 2.0 - 1.0;
+
+    // // Calculate aspect ratio
+    // let aspect = sdf_camera.resolution.x / sdf_camera.resolution.y;
+
+    // // Build camera ray
+    // let camera_right = normalize(cross(sdf_camera.camera_dir.xyz, sdf_camera.camera_up.xyz));
+    // let camera_up = normalize(cross(camera_right, sdf_camera.camera_dir.xyz));
+
+    // let fov_scale = tan(sdf_camera.fov);
+    // let ray_dir = normalize(
+    //     sdf_camera.camera_dir.xyz +
+    //     uv.x * aspect * fov_scale * camera_right +
+    //     uv.y * fov_scale * camera_up
+    // );
+
+    // let ray_origin = sdf_camera.camera_pos.xyz;
 
     // Raymarching
     var t = 0.0;
     var hit = false;
 
-    for (var i = 0; i < 128; i++) {
+    for (var i = 0u; i < sdf_camera.max_step; i++) {
         let p = ray_origin + ray_dir * t;
         let d = map(p);
 
