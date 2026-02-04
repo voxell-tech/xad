@@ -1,6 +1,3 @@
-// SDF Raymarching Shader using FullscreenMaterial
-// Note: bindings 0 and 1 are reserved for screen_texture/sampler (we ignore them)
-
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 #import bevy_render::view::View;
 
@@ -10,8 +7,8 @@ struct SdfCamera {
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
-@group(0) @binding(2) var<uniform> sdf_camera: SdfCamera;
-@group(0) @binding(3) var<uniform> view: View;
+@group(0) @binding(2) var<uniform> view: View;
+@group(0) @binding(3) var<uniform> sdf_camera: SdfCamera;
 
 // SDF primitives - https://iquilezles.org/articles/distfunctions/
 fn sd_sphere(p: vec3f, r: f32) -> f32 {
@@ -36,10 +33,10 @@ fn sd_torus(p: vec3f, t: vec2f) -> f32 {
 /// Scene composition.
 fn map(p: vec3f) -> f32 {
     let box_dist = sd_round_box(p, vec3f(1.0), 0.1);
-    let sphere_dist = sd_sphere(p - vec3f(2.5, 0.0, 0.0), 0.8);
-    let torus_dist = sd_torus(p - vec3f(-2.5, 0.0, 0.0), vec2f(0.8, 0.3));
+    let sphere_dist = sd_sphere(p - vec3f(1.0, 0.0, 0.0), 0.8);
+    let torus_dist = sd_torus(p - vec3f(1.0, 0.0, 0.0), vec2f(0.8, 0.3));
 
-    return min(min(box_dist, sphere_dist), torus_dist);
+    return max(max(box_dist, -sphere_dist), -torus_dist);
 }
 
 /// Calculate surface normal via gradient.
@@ -59,7 +56,7 @@ fn calc_soft_shadow(ro: vec3f, rd: vec3f, mint: f32, maxt: f32, k: f32) -> f32 {
     for (var i = 0; i < 64; i++) {
         let h = map(ro + rd * t);
         res = min(res, k * h / t);
-        t += clamp(h, 0.02, 0.10);
+        t += clamp(h, 0.02, 0.1);
         if res < 0.001 || t > maxt {
             break;
         }
@@ -75,7 +72,7 @@ fn calc_ao(pos: vec3f, nor: vec3f) -> f32 {
         let h = 0.01 + 0.12 * f32(i) / 4.0;
         let d = map(pos + h * nor);
         occ += (h - d) * sca;
-        sca *= 0.95;
+        sca *= 0.85;
     }
     return clamp(1.0 - 3.0 * occ, 0.0, 1.0);
 }
@@ -97,11 +94,11 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
     let ray_dir = normalize(target_world - ray_origin);
 
     // Raymarching.
-    var t = 0.0;
+    var march = 0.0;
     var hit = false;
 
     for (var i = 0u; i < sdf_camera.max_step; i++) {
-        let p = ray_origin + ray_dir * t;
+        let p = ray_origin + ray_dir * march;
         let d = map(p);
 
         if d < 0.0001 {
@@ -109,15 +106,15 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
             break;
         }
 
-        t += d;
+        march += d;
 
-        if t > 100.0 {
+        if march > 100.0 {
             break;
         }
     }
 
     if hit {
-        let pos = ray_origin + ray_dir * t;
+        let pos = ray_origin + ray_dir * march;
         let normal = calc_normal(pos);
 
         // Simple lighting.

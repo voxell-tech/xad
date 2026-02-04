@@ -4,7 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.18.0", default-features = false, features = ["3d"] }
+bevy = { version = "0.18.0", default-features = false, features = ["3d", "file_watcher"] }
 bevy_egui = "0.39.0"
-# bevy_vello = "0.13.1"
-# fiksi = { git = "https://github.com/nixonyh/fiksi", rev = "9832d2b07eef347ef90c510cfd96c62452d497de" }
