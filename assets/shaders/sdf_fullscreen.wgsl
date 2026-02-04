@@ -33,7 +33,7 @@ fn sd_torus(p: vec3f, t: vec2f) -> f32 {
     return length(q) - t.y;
 }
 
-// Scene composition
+/// Scene composition.
 fn map(p: vec3f) -> f32 {
     let box_dist = sd_round_box(p, vec3f(1.0), 0.1);
     let sphere_dist = sd_sphere(p - vec3f(2.5, 0.0, 0.0), 0.8);
@@ -42,7 +42,7 @@ fn map(p: vec3f) -> f32 {
     return min(min(box_dist, sphere_dist), torus_dist);
 }
 
-// Calculate surface normal via gradient
+/// Calculate surface normal via gradient.
 fn calc_normal(p: vec3f) -> vec3f {
     let e = vec2f(0.0001, 0.0);
     return normalize(vec3f(
@@ -52,7 +52,7 @@ fn calc_normal(p: vec3f) -> vec3f {
     ));
 }
 
-// Soft shadows
+/// Soft shadows.
 fn calc_soft_shadow(ro: vec3f, rd: vec3f, mint: f32, maxt: f32, k: f32) -> f32 {
     var res = 1.0;
     var t = mint;
@@ -96,26 +96,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
 
     let ray_dir = normalize(target_world - ray_origin);
 
-    // // Convert UV [0,1] to NDC [-1,1]
-    // let uv = in.uv * 2.0 - 1.0;
-
-    // // Calculate aspect ratio
-    // let aspect = sdf_camera.resolution.x / sdf_camera.resolution.y;
-
-    // // Build camera ray
-    // let camera_right = normalize(cross(sdf_camera.camera_dir.xyz, sdf_camera.camera_up.xyz));
-    // let camera_up = normalize(cross(camera_right, sdf_camera.camera_dir.xyz));
-
-    // let fov_scale = tan(sdf_camera.fov);
-    // let ray_dir = normalize(
-    //     sdf_camera.camera_dir.xyz +
-    //     uv.x * aspect * fov_scale * camera_right +
-    //     uv.y * fov_scale * camera_up
-    // );
-
-    // let ray_origin = sdf_camera.camera_pos.xyz;
-
-    // Raymarching
+    // Raymarching.
     var t = 0.0;
     var hit = false;
 
@@ -139,27 +120,27 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
         let pos = ray_origin + ray_dir * t;
         let normal = calc_normal(pos);
 
-        // Simple lighting
+        // Simple lighting.
         let light_dir = normalize(vec3f(1.0, -1.0, 1.0));
         let diffuse = max(dot(normal, light_dir), 0.0);
         let ambient = 0.1;
 
-        // Soft shadow
+        // Soft shadow.
         let shadow = calc_soft_shadow(pos + normal * 0.001, light_dir, 0.01, 10.0, 8.0);
 
-        // Ambient occlusion
+        // Ambient occlusion.
         let ao = calc_ao(pos, normal);
 
-        // Base color from normal
+        // Base color from normal.
         let base_color = normal * 0.5 + 0.5;
 
-        // Final color
+        // Final color.
         let color = base_color * (ambient + diffuse * shadow) * ao;
 
         return vec4f(color, 1.0);
     }
 
     // Background.
-    // TODO: Utilize depht texture to merge sdf!
+    // TODO: Utilize depth texture to merge sdf!
     return textureSample(screen_texture, texture_sampler, in.uv);
 }
