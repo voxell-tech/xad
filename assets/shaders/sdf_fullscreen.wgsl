@@ -2,51 +2,48 @@
 // Note: bindings 0 and 1 are reserved for screen_texture/sampler (we ignore them)
 
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
+#import bevy_render::view::View;
 
-struct SdfUniforms {
-    camera_pos: vec4f,
-    camera_dir: vec4f,
-    camera_up: vec4f,
-    resolution: vec2f,
-    fov: f32,
-    _padding: f32,
+struct SdfCamera {
+    max_step: u32,
 };
 
-// Binding 2 because 0 and 1 are reserved for screen_texture in FullscreenMaterial
-@group(0) @binding(2)
-var<uniform> uniforms: SdfUniforms;
+@group(0) @binding(0) var screen_texture: texture_2d<f32>;
+@group(0) @binding(1) var texture_sampler: sampler;
+@group(0) @binding(2) var<uniform> sdf_camera: SdfCamera;
+@group(0) @binding(3) var<uniform> view: View;
 
 // SDF primitives - https://iquilezles.org/articles/distfunctions/
-fn sdSphere(p: vec3f, r: f32) -> f32 {
+fn sd_sphere(p: vec3f, r: f32) -> f32 {
     return length(p) - r;
 }
 
-fn sdBox(p: vec3f, b: vec3f) -> f32 {
+fn sd_box(p: vec3f, b: vec3f) -> f32 {
     let q = abs(p) - b;
     return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
 }
 
-fn sdRoundBox(p: vec3f, b: vec3f, r: f32) -> f32 {
+fn sd_round_box(p: vec3f, b: vec3f, r: f32) -> f32 {
     let q = abs(p) - b + r;
     return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
 }
 
-fn sdTorus(p: vec3f, t: vec2f) -> f32 {
+fn sd_torus(p: vec3f, t: vec2f) -> f32 {
     let q = vec2f(length(p.xz) - t.x, p.y);
     return length(q) - t.y;
 }
 
-// Scene composition
+/// Scene composition.
 fn map(p: vec3f) -> f32 {
-    let box_dist = sdRoundBox(p, vec3f(1.0), 0.1);
-    let sphere_dist = sdSphere(p - vec3f(2.5, 0.0, 0.0), 0.8);
-    let torus_dist = sdTorus(p - vec3f(-2.5, 0.0, 0.0), vec2f(0.8, 0.3));
+    let box_dist = sd_round_box(p, vec3f(1.0), 0.1);
+    let sphere_dist = sd_sphere(p - vec3f(2.5, 0.0, 0.0), 0.8);
+    let torus_dist = sd_torus(p - vec3f(-2.5, 0.0, 0.0), vec2f(0.8, 0.3));
 
     return min(min(box_dist, sphere_dist), torus_dist);
 }
 
-// Calculate surface normal via gradient
-fn calcNormal(p: vec3f) -> vec3f {
+/// Calculate surface normal via gradient.
+fn calc_normal(p: vec3f) -> vec3f {
     let e = vec2f(0.0001, 0.0);
     return normalize(vec3f(
         map(p + e.xyy) - map(p - e.xyy),
@@ -55,8 +52,8 @@ fn calcNormal(p: vec3f) -> vec3f {
     ));
 }
 
-// Soft shadows
-fn calcSoftShadow(ro: vec3f, rd: vec3f, mint: f32, maxt: f32, k: f32) -> f32 {
+/// Soft shadows.
+fn calc_soft_shadow(ro: vec3f, rd: vec3f, mint: f32, maxt: f32, k: f32) -> f32 {
     var res = 1.0;
     var t = mint;
     for (var i = 0; i < 64; i++) {
@@ -70,8 +67,8 @@ fn calcSoftShadow(ro: vec3f, rd: vec3f, mint: f32, maxt: f32, k: f32) -> f32 {
     return clamp(res, 0.0, 1.0);
 }
 
-// Ambient occlusion
-fn calcAO(pos: vec3f, nor: vec3f) -> f32 {
+/// Ambient occlusion.
+fn calc_ao(pos: vec3f, nor: vec3f) -> f32 {
     var occ = 0.0;
     var sca = 1.0;
     for (var i = 0; i < 5; i++) {
@@ -85,30 +82,25 @@ fn calcAO(pos: vec3f, nor: vec3f) -> f32 {
 
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
-    // Convert UV [0,1] to NDC [-1,1]
-    let uv = in.uv * 2.0 - 1.0;
+    // Convert UV [0,1] to NDC [-1,1].
+    let ndc = in.uv * 2.0 - 1.0;
 
-    // Calculate aspect ratio
-    let aspect = uniforms.resolution.x / uniforms.resolution.y;
+    let ray_origin = view.world_position;
 
-    // Build camera ray
-    let camera_right = normalize(cross(uniforms.camera_dir.xyz, uniforms.camera_up.xyz));
-    let camera_up = normalize(cross(camera_right, uniforms.camera_dir.xyz));
+    // Calculate ray direction using the `world_from_clip` matrix.
+    // We pick a point on the far plane (z = 0.0 in reverse-z, or 1.0 in standard)
+    // For hit-testing, any Z works as long as we normalize the resulting vector.
+    let target_clip = vec4f(ndc, 1.0, 1.0); 
+    let target_world_homogenous = view.world_from_clip * target_clip;
+    let target_world = target_world_homogenous.xyz / target_world_homogenous.w;
 
-    let fov_scale = tan(uniforms.fov);
-    let ray_dir = normalize(
-        uniforms.camera_dir.xyz +
-        uv.x * aspect * fov_scale * camera_right +
-        uv.y * fov_scale * camera_up
-    );
+    let ray_dir = normalize(target_world - ray_origin);
 
-    let ray_origin = uniforms.camera_pos.xyz;
-
-    // Raymarching
+    // Raymarching.
     var t = 0.0;
     var hit = false;
 
-    for (var i = 0; i < 128; i++) {
+    for (var i = 0u; i < sdf_camera.max_step; i++) {
         let p = ray_origin + ray_dir * t;
         let d = map(p);
 
@@ -126,29 +118,29 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
 
     if hit {
         let pos = ray_origin + ray_dir * t;
-        let normal = calcNormal(pos);
+        let normal = calc_normal(pos);
 
-        // Simple lighting
-        let light_dir = normalize(vec3f(1.0, 1.0, 1.0));
+        // Simple lighting.
+        let light_dir = normalize(vec3f(1.0, -1.0, 1.0));
         let diffuse = max(dot(normal, light_dir), 0.0);
         let ambient = 0.1;
 
-        // Soft shadow
-        let shadow = calcSoftShadow(pos + normal * 0.001, light_dir, 0.01, 10.0, 8.0);
+        // Soft shadow.
+        let shadow = calc_soft_shadow(pos + normal * 0.001, light_dir, 0.01, 10.0, 8.0);
 
-        // Ambient occlusion
-        let ao = calcAO(pos, normal);
+        // Ambient occlusion.
+        let ao = calc_ao(pos, normal);
 
-        // Base color from normal
+        // Base color from normal.
         let base_color = normal * 0.5 + 0.5;
 
-        // Final color
+        // Final color.
         let color = base_color * (ambient + diffuse * shadow) * ao;
 
         return vec4f(color, 1.0);
     }
 
-    // Background gradient
-    let bg = mix(vec3f(0.1, 0.1, 0.15), vec3f(0.3, 0.3, 0.4), in.uv.y);
-    return vec4f(bg, 1.0);
+    // Background.
+    // TODO: Utilize depth texture to merge sdf!
+    return textureSample(screen_texture, texture_sampler, in.uv);
 }
