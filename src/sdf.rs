@@ -13,6 +13,8 @@ use bevy::render::view::{
 };
 use bevy::render::{RenderApp, RenderStartup};
 
+pub mod transform;
+
 const SHADER_ASSET_PATH: &str = "shaders/sdf_fullscreen.wgsl";
 
 pub struct SdfPlugin;
@@ -217,7 +219,15 @@ fn init_sdf_pipeline(
     });
 }
 
-#[derive(Component, Clone, Copy, ExtractComponent, ShaderType)]
+#[derive(
+    Component,
+    ExtractComponent,
+    ShaderType,
+    Reflect,
+    Debug,
+    Clone,
+    Copy,
+)]
 pub struct SdfCamera {
     /// Max raymarch steps. Defaults to 128.
     pub max_step: u32,
