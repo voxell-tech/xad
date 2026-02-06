@@ -13,6 +13,7 @@ use bevy::render::view::{
 };
 use bevy::render::{RenderApp, RenderStartup};
 
+pub mod primitves;
 pub mod transform;
 
 const SHADER_ASSET_PATH: &str = "shaders/sdf_fullscreen.wgsl";

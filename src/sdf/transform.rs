@@ -1,6 +1,5 @@
 use bevy::math::{Affine3, Affine3A};
 use bevy::prelude::*;
-use bevy::render::extract_component::*;
 use bevy::render::render_resource::ShaderType;
 
 pub struct SdfTransformPlugin;
@@ -129,15 +128,7 @@ impl SdfGlobalTransform {
     }
 }
 
-#[derive(
-    Component,
-    ExtractComponent,
-    ShaderType,
-    Reflect,
-    Debug,
-    Clone,
-    Copy,
-)]
+#[derive(Component, ShaderType, Reflect, Debug, Clone, Copy)]
 pub struct SdfTransformUniform {
     pub world_from_local: [Vec4; 3],
     pub scale: f32,
