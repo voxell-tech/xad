@@ -3,12 +3,20 @@
 
 struct SdfCamera {
     max_step: u32,
+    far_plane: f32,
 };
+
+struct SdfTransformUniform {
+    local_from_world: mat3x4<f32>,
+    scale: f32,
+};
+
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
 @group(0) @binding(2) var<uniform> view: View;
 @group(0) @binding(3) var<uniform> sdf_camera: SdfCamera;
+@group(0) @binding(4) var<storage> sdf_transforms: array<SdfTransformUniform>;
 
 // SDF primitives - https://iquilezles.org/articles/distfunctions/
 fn sd_sphere(p: vec3f, r: f32) -> f32 {
@@ -31,21 +39,29 @@ fn sd_torus(p: vec3f, t: vec2f) -> f32 {
 }
 
 /// Scene composition.
-fn map(p: vec3f) -> f32 {
-    let box_dist = sd_round_box(p, vec3f(1.0), 0.1);
-    let sphere_dist = sd_sphere(p - vec3f(1.0, 0.0, 0.0), 0.8);
-    let torus_dist = sd_torus(p - vec3f(1.0, 0.0, 0.0), vec2f(0.8, 0.3));
+fn composition(point: vec3f) -> f32 {
+    let len = arrayLength(&sdf_transforms);
+    var dist = sdf_camera.far_plane;
 
-    return max(max(box_dist, -sphere_dist), -torus_dist);
+    // TODO: Implement acceleration structure (BVH?) to prevent looping over
+    // the entire transform buffer.
+    // TODO: Support different SDF primitives.
+    for (var i = 0u; i < len; i++) {
+        let transform = sdf_transforms[i];
+        let sample_point = (vec4f(point, 1.0) * transform.local_from_world).xyz;
+        dist = min(dist, sd_box(sample_point / transform.scale, vec3f(0.3)) * transform.scale);
+    }
+
+    return dist;
 }
 
 /// Calculate surface normal via gradient.
 fn calc_normal(p: vec3f) -> vec3f {
     let e = vec2f(0.0001, 0.0);
     return normalize(vec3f(
-        map(p + e.xyy) - map(p - e.xyy),
-        map(p + e.yxy) - map(p - e.yxy),
-        map(p + e.yyx) - map(p - e.yyx)
+        composition(p + e.xyy) - composition(p - e.xyy),
+        composition(p + e.yxy) - composition(p - e.yxy),
+        composition(p + e.yyx) - composition(p - e.yyx)
     ));
 }
 
@@ -54,7 +70,7 @@ fn calc_soft_shadow(ro: vec3f, rd: vec3f, mint: f32, maxt: f32, k: f32) -> f32 {
     var res = 1.0;
     var t = mint;
     for (var i = 0; i < 64; i++) {
-        let h = map(ro + rd * t);
+        let h = composition(ro + rd * t);
         res = min(res, k * h / t);
         t += clamp(h, 0.02, 0.1);
         if res < 0.001 || t > maxt {
@@ -70,7 +86,7 @@ fn calc_ao(pos: vec3f, nor: vec3f) -> f32 {
     var sca = 1.0;
     for (var i = 0; i < 5; i++) {
         let h = 0.01 + 0.12 * f32(i) / 4.0;
-        let d = map(pos + h * nor);
+        let d = composition(pos + h * nor);
         occ += (h - d) * sca;
         sca *= 0.85;
     }
@@ -80,7 +96,7 @@ fn calc_ao(pos: vec3f, nor: vec3f) -> f32 {
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
     // Convert UV [0,1] to NDC [-1,1].
-    let ndc = in.uv * 2.0 - 1.0;
+    let ndc = vec2f(in.uv.x * 2.0 - 1.0, in.uv.y * -2.0 + 1.0);
 
     let ray_origin = view.world_position;
 
@@ -99,16 +115,16 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
 
     for (var i = 0u; i < sdf_camera.max_step; i++) {
         let p = ray_origin + ray_dir * march;
-        let d = map(p);
+        let d = composition(p);
 
-        if d < 0.0001 {
+        if d < 0.001 {
             hit = true;
             break;
         }
 
         march += d;
 
-        if march > 100.0 {
+        if march >= sdf_camera.far_plane {
             break;
         }
     }
@@ -118,7 +134,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
         let normal = calc_normal(pos);
 
         // Simple lighting.
-        let light_dir = normalize(vec3f(1.0, -1.0, 1.0));
+        let light_dir = normalize(vec3f(1.0, 1.0, 1.0));
         let diffuse = max(dot(normal, light_dir), 0.0);
         let ambient = 0.1;
 
@@ -129,7 +145,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
         let ao = calc_ao(pos, normal);
 
         // Base color from normal.
-        let base_color = normal * 0.5 + 0.5;
+        let base_color = normal * 0.7 + 0.3;
 
         // Final color.
         let color = base_color * (ambient + diffuse * shadow) * ao;

@@ -7,11 +7,17 @@ use bevy::render::extract_component::*;
 use bevy::render::render_graph::*;
 use bevy::render::render_resource::binding_types::*;
 use bevy::render::render_resource::*;
-use bevy::render::renderer::{RenderContext, RenderDevice};
+use bevy::render::renderer::{
+    RenderContext, RenderDevice, RenderQueue,
+};
 use bevy::render::view::{
     ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms,
 };
-use bevy::render::{RenderApp, RenderStartup};
+use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
+
+use crate::sdf::transform::{
+    SdfTransformPlugin, SdfTransformUniform,
+};
 
 pub mod primitves;
 pub mod transform;
@@ -23,25 +29,37 @@ pub struct SdfPlugin;
 impl Plugin for SdfPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
+            SdfTransformPlugin,
             ExtractComponentPlugin::<SdfCamera>::default(),
             UniformComponentPlugin::<SdfCamera>::default(),
+            ExtractComponentPlugin::<SdfTransformUniform>::default(),
         ));
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
 
-        render_app.add_systems(RenderStartup, init_sdf_pipeline);
+        render_app
+            .add_systems(
+                RenderStartup,
+                (init_sdf_pipeline, init_sdf_buffers),
+            )
+            .add_systems(
+                Render,
+                update_transform_buffer
+                    .in_set(RenderSystems::PrepareResources),
+            );
 
         render_app
             .add_render_graph_node::<ViewNodeRunner<SdfNode>>(
-                Core3d, SdfLabel,
+                Core3d,
+                SdfRenderLabel,
             )
             .add_render_graph_edges(
                 Core3d,
                 (
                     Node3d::EndMainPass,
-                    SdfLabel,
+                    SdfRenderLabel,
                     Node3d::StartMainPassPostProcessing,
                 ),
             );
@@ -49,7 +67,7 @@ impl Plugin for SdfPlugin {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-pub struct SdfLabel;
+pub struct SdfRenderLabel;
 
 #[derive(Default)]
 pub struct SdfNode;
@@ -75,6 +93,7 @@ impl ViewNode for SdfNode {
     ) -> Result<(), NodeRunError> {
         let pipeline_cache = world.resource::<PipelineCache>();
         let sdf_pipeline = world.resource::<SdfPipeline>();
+        let sdf_buffers = world.resource::<SdfBuffers>();
         let view_uniforms = world.resource::<ViewUniforms>();
         let sdf_cameras =
             world.resource::<ComponentUniforms<SdfCamera>>();
@@ -83,11 +102,13 @@ impl ViewNode for SdfNode {
             Some(pipeline),
             Some(view_uniforms_binding),
             Some(sdf_cameras_binding),
+            Some(transform_buffer_binding),
         ) = (
             pipeline_cache
                 .get_render_pipeline(sdf_pipeline.pipeline_id),
             view_uniforms.uniforms.binding(),
             sdf_cameras.uniforms().binding(),
+            sdf_buffers.transform_buffer.binding(),
         )
         else {
             return Ok(());
@@ -114,6 +135,7 @@ impl ViewNode for SdfNode {
                     &sdf_pipeline.screen_sampler,
                     view_uniforms_binding,
                     sdf_cameras_binding,
+                    transform_buffer_binding,
                 )),
             );
 
@@ -161,6 +183,41 @@ struct SdfPipeline {
     pipeline_id: CachedRenderPipelineId,
 }
 
+#[derive(Resource)]
+struct SdfBuffers {
+    transform_buffer: BufferVec<SdfTransformUniform>,
+}
+
+fn update_transform_buffer(
+    q_transforms: Query<&SdfTransformUniform>,
+    mut buffers: ResMut<SdfBuffers>,
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+) {
+    // TODO: Optimize this to only update changed/added/removed transform!
+    buffers.transform_buffer.clear();
+    let mut capacity = 0;
+    for transform in q_transforms.iter() {
+        buffers.transform_buffer.push(*transform);
+        capacity += 1;
+    }
+
+    if capacity > 0 {
+        buffers
+            .transform_buffer
+            .write_buffer(&render_device, &render_queue);
+    }
+}
+
+fn init_sdf_buffers(mut commands: Commands) {
+    let mut transform_buffer = BufferVec::<SdfTransformUniform>::new(
+        BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+    );
+    transform_buffer.set_label(Some("sdf_transform_buffer"));
+
+    commands.insert_resource(SdfBuffers { transform_buffer });
+}
+
 fn init_sdf_pipeline(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -184,6 +241,10 @@ fn init_sdf_pipeline(
                 uniform_buffer::<ViewUniform>(true),
                 // The settings uniform.
                 uniform_buffer::<SdfCamera>(true),
+                // Transforms of the SDF objects.
+                storage_buffer_read_only::<SdfTransformUniform>(
+                    false,
+                ),
             ),
         ),
     );
@@ -220,6 +281,8 @@ fn init_sdf_pipeline(
     });
 }
 
+/// Configurations for a SDF camera.
+/// [`Camera`]s must have this component in order to render SDFs.
 #[derive(
     Component,
     ExtractComponent,
@@ -232,10 +295,15 @@ fn init_sdf_pipeline(
 pub struct SdfCamera {
     /// Max raymarch steps. Defaults to 128.
     pub max_step: u32,
+    /// Maximum distance the raymarcher can travel.
+    pub far_plane: f32,
 }
 
 impl Default for SdfCamera {
     fn default() -> Self {
-        Self { max_step: 128 }
+        Self {
+            max_step: 128,
+            far_plane: 1000.0,
+        }
     }
 }

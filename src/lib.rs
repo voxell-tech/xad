@@ -10,19 +10,6 @@ pub struct XadPlugin;
 
 impl Plugin for XadPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(DefaultPlugins)
-            .add_plugins(CameraPlugin)
-            .add_plugins(SdfPlugin);
-
-        app.add_systems(Update, exit_system);
-    }
-}
-
-fn exit_system(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut exit: MessageWriter<AppExit>,
-) {
-    if keyboard.just_pressed(KeyCode::Escape) {
-        exit.write(AppExit::Success);
+        app.add_plugins((SdfPlugin, CameraPlugin));
     }
 }

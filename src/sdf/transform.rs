@@ -1,21 +1,34 @@
 use bevy::math::{Affine3, Affine3A};
 use bevy::prelude::*;
+use bevy::render::extract_component::ExtractComponent;
 use bevy::render::render_resource::ShaderType;
 
 pub struct SdfTransformPlugin;
 
 impl Plugin for SdfTransformPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            PostStartup,
-            propagate_transform
-                .in_set(SdfTransformSystems::Propagate),
-        )
-        .add_systems(
-            PostUpdate,
-            propagate_transform
-                .in_set(SdfTransformSystems::Propagate),
-        );
+        let system_config = || {
+            (
+                SdfTransformSystems::Propagate,
+                SdfTransformSystems::SetUniform,
+            )
+                .chain()
+        };
+
+        let transform_system = || {
+            (
+                propagate_transform
+                    .in_set(SdfTransformSystems::Propagate),
+                update_sdf_transform_uniform
+                    .in_set(SdfTransformSystems::SetUniform),
+            )
+        };
+
+        app.configure_sets(PostStartup, system_config());
+        app.configure_sets(PostUpdate, system_config());
+
+        app.add_systems(PostStartup, transform_system())
+            .add_systems(PostUpdate, transform_system());
     }
 }
 
@@ -24,15 +37,18 @@ impl Plugin for SdfTransformPlugin {
 pub enum SdfTransformSystems {
     /// Propagates changes in transform to children's [`SdfGlobalTransform`]
     Propagate,
+    /// Sets the [`SdfTransformUniform`].
+    SetUniform,
 }
 
 fn propagate_transform(
+    // TODO: Use the Ref to skip unchanged transforms.
     mut q_root_transforms: Query<
-        (&mut SdfGlobalTransform, &SdfTransform, Entity),
+        (&mut SdfGlobalTransform, Ref<SdfTransform>, Entity),
         Without<ChildOf>,
     >,
     mut q_child_transforms: Query<
-        (&mut SdfGlobalTransform, &SdfTransform),
+        (&mut SdfGlobalTransform, Ref<SdfTransform>),
         With<ChildOf>,
     >,
     q_children: Query<&Children>,
@@ -74,11 +90,42 @@ fn propagate_transform(
     }
 }
 
+fn update_sdf_transform_uniform(
+    mut q_transforms: Query<
+        (&mut SdfTransformUniform, &SdfGlobalTransform),
+        Changed<SdfGlobalTransform>,
+    >,
+) {
+    for (mut transform_uniform, transform) in q_transforms.iter_mut()
+    {
+        *transform_uniform =
+            SdfTransformUniform::from_global_transform(transform);
+    }
+}
+
 #[derive(Component, Reflect, Debug, Clone, Copy)]
+#[require(SdfGlobalTransform)]
 pub struct SdfTransform {
-    translation: Vec3,
-    rotation: Quat,
-    scale: f32,
+    pub translation: Vec3,
+    pub rotation: Quat,
+    pub scale: f32,
+}
+
+impl SdfTransform {
+    pub fn with_translation(mut self, translation: Vec3) -> Self {
+        self.translation = translation;
+        self
+    }
+
+    pub fn with_rotation(mut self, rotation: Quat) -> Self {
+        self.rotation = rotation;
+        self
+    }
+
+    pub fn with_scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
+    }
 }
 
 impl Default for SdfTransform {
@@ -103,7 +150,8 @@ impl From<SdfTransform> for SdfGlobalTransform {
     }
 }
 
-#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Default, Debug, Clone, Copy)]
+#[require(SdfTransformUniform)]
 pub struct SdfGlobalTransform {
     world_from_local: Affine3A,
     scale: f32,
@@ -128,9 +176,18 @@ impl SdfGlobalTransform {
     }
 }
 
-#[derive(Component, ShaderType, Reflect, Debug, Clone, Copy)]
+#[derive(
+    ExtractComponent,
+    Component,
+    ShaderType,
+    Reflect,
+    Default,
+    Debug,
+    Clone,
+    Copy,
+)]
 pub struct SdfTransformUniform {
-    pub world_from_local: [Vec4; 3],
+    pub local_from_world: [Vec4; 3],
     pub scale: f32,
 }
 
@@ -139,8 +196,8 @@ impl SdfTransformUniform {
         global_transform: &SdfGlobalTransform,
     ) -> Self {
         Self {
-            world_from_local: Affine3::from(
-                &global_transform.world_from_local,
+            local_from_world: Affine3::from(
+                &global_transform.world_from_local.inverse(),
             )
             .to_transpose(),
             scale: global_transform.scale,
