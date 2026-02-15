@@ -22,7 +22,7 @@ use crate::sdf::transform::{
 pub mod primitves;
 pub mod transform;
 
-const SHADER_ASSET_PATH: &str = "shaders/sdf_fullscreen.wgsl";
+const SHADER_ASSET_PATH: &str = "shaders/sdf_raymarch.wgsl";
 
 pub struct SdfPlugin;
 
