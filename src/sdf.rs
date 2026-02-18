@@ -263,6 +263,9 @@ fn update_primitive_buffers<
     // TODO: Optimize this to only update changed/added/removed primitive!
     let buffer = get_buffer(&mut buffers);
     buffer.clear();
+    // TODO: This could be replaced with a custom self managed empty buffer
+    // next time. (This is needed right now since a `BufferVec` won't be created
+    // if the data is empty!)
     buffer.push(T::default());
     for (i, (primitive, entity)) in q_primitives.iter().enumerate() {
         buffer.push(primitive.clone());
