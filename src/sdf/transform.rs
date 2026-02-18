@@ -1,28 +1,25 @@
-use bevy::math::{Affine3, Affine3A};
+use bevy::math::Affine3A;
 use bevy::prelude::*;
-use bevy::render::extract_component::ExtractComponent;
-use bevy::render::render_resource::ShaderType;
+use bevy::render::extract_component::{
+    ExtractComponent, ExtractComponentPlugin,
+};
 
 pub struct SdfTransformPlugin;
 
 impl Plugin for SdfTransformPlugin {
     fn build(&self, app: &mut App) {
-        let system_config = || {
-            (
-                SdfTransformSystems::Propagate,
-                SdfTransformSystems::SetUniform,
-            )
-                .chain()
-        };
+        // NOTE: Implemented as closures for future purposes when
+        // systems and configs get more complex.
+        let system_config = || SdfTransformSystems::Propagate;
 
         let transform_system = || {
-            (
-                propagate_transform
-                    .in_set(SdfTransformSystems::Propagate),
-                update_sdf_transform_uniform
-                    .in_set(SdfTransformSystems::SetUniform),
-            )
+            propagate_transform.in_set(SdfTransformSystems::Propagate)
         };
+
+        // TODO: Change to extract visible only?
+        app.add_plugins(
+            ExtractComponentPlugin::<SdfGlobalTransform>::default(),
+        );
 
         app.configure_sets(PostStartup, system_config());
         app.configure_sets(PostUpdate, system_config());
@@ -37,8 +34,6 @@ impl Plugin for SdfTransformPlugin {
 pub enum SdfTransformSystems {
     /// Propagates changes in transform to children's [`SdfGlobalTransform`]
     Propagate,
-    /// Sets the [`SdfTransformUniform`].
-    SetUniform,
 }
 
 fn propagate_transform(
@@ -90,19 +85,6 @@ fn propagate_transform(
     }
 }
 
-fn update_sdf_transform_uniform(
-    mut q_transforms: Query<
-        (&mut SdfTransformUniform, &SdfGlobalTransform),
-        Changed<SdfGlobalTransform>,
-    >,
-) {
-    for (mut transform_uniform, transform) in q_transforms.iter_mut()
-    {
-        *transform_uniform =
-            SdfTransformUniform::from_global_transform(transform);
-    }
-}
-
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[require(SdfGlobalTransform)]
 pub struct SdfTransform {
@@ -150,8 +132,9 @@ impl From<SdfTransform> for SdfGlobalTransform {
     }
 }
 
-#[derive(Component, Reflect, Default, Debug, Clone, Copy)]
-#[require(SdfTransformUniform)]
+#[derive(
+    ExtractComponent, Component, Reflect, Default, Debug, Clone, Copy,
+)]
 pub struct SdfGlobalTransform {
     world_from_local: Affine3A,
     scale: f32,
@@ -172,35 +155,6 @@ impl SdfGlobalTransform {
             world_from_local: self.world_from_local
                 * other.world_from_local,
             scale: self.scale * other.scale,
-        }
-    }
-}
-
-#[derive(
-    ExtractComponent,
-    Component,
-    ShaderType,
-    Reflect,
-    Default,
-    Debug,
-    Clone,
-    Copy,
-)]
-pub struct SdfTransformUniform {
-    pub local_from_world: [Vec4; 3],
-    pub scale: f32,
-}
-
-impl SdfTransformUniform {
-    pub fn from_global_transform(
-        global_transform: &SdfGlobalTransform,
-    ) -> Self {
-        Self {
-            local_from_world: Affine3::from(
-                &global_transform.world_from_local.inverse(),
-            )
-            .to_transpose(),
-            scale: global_transform.scale,
         }
     }
 }

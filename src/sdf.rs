@@ -2,10 +2,12 @@ use bevy::core_pipeline::FullscreenShader;
 use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
 use bevy::ecs::query::QueryItem;
 use bevy::ecs::system::lifetimeless::Read;
+use bevy::math::Affine3;
 use bevy::prelude::*;
 use bevy::render::extract_component::*;
 use bevy::render::render_graph::*;
 use bevy::render::render_resource::binding_types::*;
+use bevy::render::render_resource::encase::private::WriteInto;
 use bevy::render::render_resource::*;
 use bevy::render::renderer::{
     RenderContext, RenderDevice, RenderQueue,
@@ -15,9 +17,10 @@ use bevy::render::view::{
 };
 use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
 
-use crate::sdf::transform::{
-    SdfTransformPlugin, SdfTransformUniform,
+use crate::sdf::primitves::{
+    SdfCuboid, SdfPrimitivePlugin, SdfRoundCuboid, SdfSphere,
 };
+use crate::sdf::transform::{SdfGlobalTransform, SdfTransformPlugin};
 
 pub mod primitves;
 pub mod transform;
@@ -30,9 +33,9 @@ impl Plugin for SdfPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             SdfTransformPlugin,
+            SdfPrimitivePlugin,
             ExtractComponentPlugin::<SdfCamera>::default(),
             UniformComponentPlugin::<SdfCamera>::default(),
-            ExtractComponentPlugin::<SdfTransformUniform>::default(),
         ));
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
@@ -46,7 +49,26 @@ impl Plugin for SdfPlugin {
             )
             .add_systems(
                 Render,
-                update_transform_buffer
+                (
+                    (
+                        update_primitive_buffers.with_input((
+                            PrimitiveType::Sphere,
+                            |b: &mut SdfBuffers| &mut b.sphere_buffer,
+                        )),
+                        update_primitive_buffers.with_input((
+                            PrimitiveType::Cuboid,
+                            |b: &mut SdfBuffers| &mut b.cuboid_buffer,
+                        )),
+                        update_primitive_buffers.with_input((
+                            PrimitiveType::RoundCuboid,
+                            |b: &mut SdfBuffers| {
+                                &mut b.round_cuboid_buffer
+                            },
+                        )),
+                    ),
+                    update_input_buffers,
+                )
+                    .chain()
                     .in_set(RenderSystems::PrepareResources),
             );
 
@@ -103,12 +125,18 @@ impl ViewNode for SdfNode {
             Some(view_uniforms_binding),
             Some(sdf_cameras_binding),
             Some(transform_buffer_binding),
+            Some(sphere_buffer_binding),
+            Some(cuboid_buffer_binding),
+            Some(round_cuboid_buffer_binding),
         ) = (
             pipeline_cache
                 .get_render_pipeline(sdf_pipeline.pipeline_id),
             view_uniforms.uniforms.binding(),
             sdf_cameras.uniforms().binding(),
-            sdf_buffers.transform_buffer.binding(),
+            sdf_buffers.input_buffer.binding(),
+            sdf_buffers.sphere_buffer.binding(),
+            sdf_buffers.cuboid_buffer.binding(),
+            sdf_buffers.round_cuboid_buffer.binding(),
         )
         else {
             return Ok(());
@@ -136,6 +164,9 @@ impl ViewNode for SdfNode {
                     view_uniforms_binding,
                     sdf_cameras_binding,
                     transform_buffer_binding,
+                    sphere_buffer_binding,
+                    cuboid_buffer_binding,
+                    round_cuboid_buffer_binding,
                 )),
             );
 
@@ -185,37 +216,90 @@ struct SdfPipeline {
 
 #[derive(Resource)]
 struct SdfBuffers {
-    transform_buffer: BufferVec<SdfTransformUniform>,
+    input_buffer: BufferVec<SdfInput>,
+    sphere_buffer: BufferVec<SdfSphere>,
+    cuboid_buffer: BufferVec<SdfCuboid>,
+    round_cuboid_buffer: BufferVec<SdfRoundCuboid>,
 }
 
-fn update_transform_buffer(
-    q_transforms: Query<&SdfTransformUniform>,
+fn update_input_buffers(
+    q_transforms: Query<(
+        &SdfGlobalTransform,
+        &PrimitiveType,
+        &PrimitiveIndex,
+    )>,
     mut buffers: ResMut<SdfBuffers>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
     // TODO: Optimize this to only update changed/added/removed transform!
-    buffers.transform_buffer.clear();
+    buffers.input_buffer.clear();
     let mut capacity = 0;
-    for transform in q_transforms.iter() {
-        buffers.transform_buffer.push(*transform);
+    for (transform, ty, index) in q_transforms.iter() {
+        buffers
+            .input_buffer
+            .push(SdfInput::new(transform, ty, index));
         capacity += 1;
     }
 
     if capacity > 0 {
         buffers
-            .transform_buffer
+            .input_buffer
             .write_buffer(&render_device, &render_queue);
     }
 }
 
-fn init_sdf_buffers(mut commands: Commands) {
-    let mut transform_buffer = BufferVec::<SdfTransformUniform>::new(
-        BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-    );
-    transform_buffer.set_label(Some("sdf_transform_buffer"));
+fn update_primitive_buffers<
+    T: Component + ShaderType + WriteInto + Default + Clone,
+    F: FnMut(&mut SdfBuffers) -> &mut BufferVec<T>,
+>(
+    InMut((ty, get_buffer)): InMut<(PrimitiveType, F)>,
+    mut commands: Commands,
+    q_primitives: Query<(&T, Entity)>,
+    mut buffers: ResMut<SdfBuffers>,
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+) {
+    // TODO: Optimize this to only update changed/added/removed primitive!
+    let buffer = get_buffer(&mut buffers);
+    buffer.clear();
+    buffer.push(T::default());
+    for (i, (primitive, entity)) in q_primitives.iter().enumerate() {
+        buffer.push(primitive.clone());
+        commands
+            .entity(entity)
+            .insert((*ty, PrimitiveIndex(i as u32)));
+    }
 
-    commands.insert_resource(SdfBuffers { transform_buffer });
+    buffer.write_buffer(&render_device, &render_queue);
+}
+
+fn init_sdf_buffers(mut commands: Commands) {
+    fn create_buffer_vec<T: ShaderType + WriteInto>(
+        label: &str,
+    ) -> BufferVec<T> {
+        let mut buffer = BufferVec::<T>::new(
+            BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+        );
+        buffer.set_label(Some(label));
+        buffer
+    }
+    let input_buffer =
+        create_buffer_vec::<SdfInput>("sdf_input_buffer");
+    let sphere_buffer =
+        create_buffer_vec::<SdfSphere>("sdf_sphere_buffer");
+    let cuboid_buffer =
+        create_buffer_vec::<SdfCuboid>("sdf_cuboid_buffer");
+    let round_cuboid_buffer = create_buffer_vec::<SdfRoundCuboid>(
+        "sdf_round_cuboid_buffer",
+    );
+
+    commands.insert_resource(SdfBuffers {
+        input_buffer,
+        sphere_buffer,
+        cuboid_buffer,
+        round_cuboid_buffer,
+    });
 }
 
 fn init_sdf_pipeline(
@@ -242,9 +326,10 @@ fn init_sdf_pipeline(
                 // The settings uniform.
                 uniform_buffer::<SdfCamera>(true),
                 // Transforms of the SDF objects.
-                storage_buffer_read_only::<SdfTransformUniform>(
-                    false,
-                ),
+                storage_buffer_read_only::<SdfInput>(false),
+                storage_buffer_read_only::<SdfSphere>(false),
+                storage_buffer_read_only::<SdfCuboid>(false),
+                storage_buffer_read_only::<SdfRoundCuboid>(false),
             ),
         ),
     );
@@ -281,6 +366,16 @@ fn init_sdf_pipeline(
     });
 }
 
+#[derive(Component, Debug, Clone, Copy)]
+enum PrimitiveType {
+    Sphere,
+    Cuboid,
+    RoundCuboid,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+struct PrimitiveIndex(pub u32);
+
 /// Configurations for a SDF camera.
 /// [`Camera`]s must have this component in order to render SDFs.
 #[derive(
@@ -304,6 +399,43 @@ impl Default for SdfCamera {
         Self {
             max_step: 128,
             far_plane: 1000.0,
+        }
+    }
+}
+
+#[derive(
+    ExtractComponent,
+    Component,
+    ShaderType,
+    Reflect,
+    Default,
+    Debug,
+    Clone,
+    Copy,
+)]
+struct SdfInput {
+    pub local_from_world: [Vec4; 3],
+    pub scale: f32,
+    pub primitive_type: u32,
+    pub primitive_index: u32,
+}
+
+impl SdfInput {
+    pub fn new(
+        global_transform: &SdfGlobalTransform,
+        ty: &PrimitiveType,
+        index: &PrimitiveIndex,
+    ) -> Self {
+        Self {
+            local_from_world: Affine3::from(
+                &global_transform.world_from_local().inverse(),
+            )
+            .to_transpose(),
+            scale: global_transform.scale(),
+            primitive_type: *ty as u32,
+            // Index 0 is for default value.
+            // TODO: We could cache only primitives with different settings?
+            primitive_index: index.0 + 1,
         }
     }
 }

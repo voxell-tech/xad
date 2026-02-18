@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use xad::XadPlugin;
 use xad::camera::CameraController;
 use xad::sdf::SdfCamera;
+use xad::sdf::primitves::{SdfCuboid, SdfRoundCuboid, SdfSphere};
 use xad::sdf::transform::SdfTransform;
 
 fn main() {
@@ -34,11 +35,24 @@ fn test_setup(
         for y in 0..3 {
             for x in 0..3 {
                 let (xf, yf, zf) = (x as f32, y as f32, z as f32);
-                commands.spawn(SdfTransform {
+                let mut cmd = commands.spawn(SdfTransform {
                     translation: Vec3::new(xf, yf, zf),
                     scale: 1.0 - xf * 0.1 - yf * 0.1 - zf * 0.1,
                     ..default()
                 });
+
+                if x == 0 {
+                    cmd.insert(SdfSphere { radius: 0.4 });
+                } else if x == 1 {
+                    cmd.insert(SdfCuboid {
+                        extents: Vec3::new(0.4, 0.3, 0.4),
+                    });
+                } else {
+                    cmd.insert(SdfRoundCuboid {
+                        extents: Vec3::new(0.4, 0.3, 0.4),
+                        radius: 0.3 - yf * 0.1,
+                    });
+                }
             }
         }
     }

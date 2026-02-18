@@ -6,50 +6,89 @@ struct SdfCamera {
     far_plane: f32,
 };
 
-struct SdfTransformUniform {
+struct SdfInput {
     local_from_world: mat3x4<f32>,
     scale: f32,
+    primitive_type: u32,
+    primitive_index: u32,
 };
 
+struct SdfSphere {
+    radius: f32,
+}
+
+struct SdfCuboid {
+    extents: vec3f,
+}
+
+struct SdfRoundCuboid {
+    extents: vec3f,
+    radius: f32,
+}
+
+const SPHERE: u32 = 0;
+const CUBOID: u32 = 1;
+const ROUND_CUBOID: u32 = 2;
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
 @group(0) @binding(2) var<uniform> view: View;
 @group(0) @binding(3) var<uniform> sdf_camera: SdfCamera;
-@group(0) @binding(4) var<storage> sdf_transforms: array<SdfTransformUniform>;
+@group(0) @binding(4) var<storage> inputs: array<SdfInput>;
+@group(0) @binding(5) var<storage> spheres: array<SdfSphere>;
+@group(0) @binding(6) var<storage> cuboids: array<SdfCuboid>;
+@group(0) @binding(7) var<storage> round_cuboids: array<SdfRoundCuboid>;
 
 // SDF primitives - https://iquilezles.org/articles/distfunctions/
-fn sd_sphere(p: vec3f, r: f32) -> f32 {
-    return length(p) - r;
+fn sdf_sphere(point: vec3f, radius: f32) -> f32 {
+    return length(point) - radius;
 }
 
-fn sd_box(p: vec3f, b: vec3f) -> f32 {
-    let q = abs(p) - b;
+fn sdf_cuboid(point: vec3f, extent: vec3f) -> f32 {
+    let q = abs(point) - extent;
     return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
 }
 
-fn sd_round_box(p: vec3f, b: vec3f, r: f32) -> f32 {
-    let q = abs(p) - b + r;
-    return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
+fn sdf_round_cuboid(point: vec3f, extent: vec3f, radius: f32) -> f32 {
+    let q = abs(point) - extent + radius;
+    return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0) - radius;
 }
 
-fn sd_torus(p: vec3f, t: vec2f) -> f32 {
-    let q = vec2f(length(p.xz) - t.x, p.y);
+fn sdf_torus(point: vec3f, t: vec2f) -> f32 {
+    let q = vec2f(length(point.xz) - t.x, point.y);
     return length(q) - t.y;
 }
 
 /// Scene composition.
 fn composition(point: vec3f) -> f32 {
-    let len = arrayLength(&sdf_transforms);
+    let len = arrayLength(&inputs);
     var dist = sdf_camera.far_plane;
 
     // TODO: Implement acceleration structure (BVH?) to prevent looping over
     // the entire transform buffer.
     // TODO: Support different SDF primitives.
     for (var i = 0u; i < len; i++) {
-        let transform = sdf_transforms[i];
-        let sample_point = (vec4f(point, 1.0) * transform.local_from_world).xyz;
-        dist = min(dist, sd_box(sample_point / transform.scale, vec3f(0.3)) * transform.scale);
+        let input = inputs[i];
+        let sample_point = ((vec4f(point, 1.0) * input.local_from_world).xyz) / input.scale;
+
+        var sdf_dist = dist;
+        switch input.primitive_type {
+            default { }
+            case SPHERE {
+                let radius = spheres[input.primitive_index].radius;
+                sdf_dist = sdf_sphere(sample_point, radius);
+            }
+            case CUBOID {
+                let extents = cuboids[input.primitive_index].extents;
+                sdf_dist = sdf_cuboid(sample_point, extents);
+            }
+            case ROUND_CUBOID {
+                let round_cuboid = round_cuboids[input.primitive_index];
+                sdf_dist = sdf_round_cuboid(sample_point, round_cuboid.extents, round_cuboid.radius);
+            }
+        };
+
+        dist = min(dist, sdf_dist * input.scale);
     }
 
     return dist;
