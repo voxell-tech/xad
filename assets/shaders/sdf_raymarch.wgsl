@@ -40,21 +40,21 @@ const ROUND_CUBOID: u32 = 2;
 @group(0) @binding(7) var<storage> round_cuboids: array<SdfRoundCuboid>;
 
 // SDF primitives - https://iquilezles.org/articles/distfunctions/
-fn sdf_sphere(point: vec3f, radius: f32) -> f32 {
+fn sd_sphere(point: vec3f, radius: f32) -> f32 {
     return length(point) - radius;
 }
 
-fn sdf_cuboid(point: vec3f, extent: vec3f) -> f32 {
+fn sd_cuboid(point: vec3f, extent: vec3f) -> f32 {
     let q = abs(point) - extent;
     return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
 }
 
-fn sdf_round_cuboid(point: vec3f, extent: vec3f, radius: f32) -> f32 {
+fn sd_round_cuboid(point: vec3f, extent: vec3f, radius: f32) -> f32 {
     let q = abs(point) - extent + radius;
     return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0) - radius;
 }
 
-fn sdf_torus(point: vec3f, t: vec2f) -> f32 {
+fn sd_torus(point: vec3f, t: vec2f) -> f32 {
     let q = vec2f(length(point.xz) - t.x, point.y);
     return length(q) - t.y;
 }
@@ -76,15 +76,15 @@ fn composition(point: vec3f) -> f32 {
             default { }
             case SPHERE {
                 let radius = spheres[input.primitive_index].radius;
-                sdf_dist = sdf_sphere(sample_point, radius);
+                sdf_dist = sd_sphere(sample_point, radius);
             }
             case CUBOID {
                 let extents = cuboids[input.primitive_index].extents;
-                sdf_dist = sdf_cuboid(sample_point, extents);
+                sdf_dist = sd_cuboid(sample_point, extents);
             }
             case ROUND_CUBOID {
                 let round_cuboid = round_cuboids[input.primitive_index];
-                sdf_dist = sdf_round_cuboid(sample_point, round_cuboid.extents, round_cuboid.radius);
+                sdf_dist = sd_round_cuboid(sample_point, round_cuboid.extents, round_cuboid.radius);
             }
         };
 
