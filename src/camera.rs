@@ -1,13 +1,10 @@
 use bevy::prelude::*;
 
-use crate::sdf::SdfCamera;
-
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup)
-            .add_systems(Update, update_camera);
+        app.add_systems(Update, update_camera);
     }
 }
 
@@ -33,17 +30,6 @@ impl Default for CameraController {
             sensitivity: 0.3,
         }
     }
-}
-
-fn setup(mut commands: Commands) {
-    // Spawn SDF camera.
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_translation(Vec3::new(0.0, 0.0, 5.0))
-            .looking_at(Vec3::ZERO, Vec3::Y),
-        CameraController::default(),
-        SdfCamera::default(),
-    ));
 }
 
 fn update_camera(
