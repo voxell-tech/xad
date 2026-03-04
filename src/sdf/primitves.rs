@@ -13,6 +13,7 @@ impl Plugin for SdfPrimitivePlugin {
             ExtractComponentPlugin::<SdfSphere>::default(),
             ExtractComponentPlugin::<SdfCuboid>::default(),
             ExtractComponentPlugin::<SdfRoundCuboid>::default(),
+            ExtractComponentPlugin::<SdfCapsule>::default(),
         ));
     }
 }
@@ -85,6 +86,36 @@ impl SdfRoundCuboid {
 }
 
 impl Default for SdfRoundCuboid {
+    fn default() -> Self {
+        Self::ONE
+    }
+}
+
+#[derive(
+    ExtractComponent,
+    Component,
+    Reflect,
+    ShaderType,
+    Debug,
+    Clone,
+    Copy,
+)]
+
+pub struct SdfCapsule {
+    pub point_a: Vec3,
+    pub point_b: Vec3,
+    pub radius: f32,
+}
+
+impl SdfCapsule {
+    pub const ONE: Self = Self {
+        point_a: Vec3::new(0.0, -0.5, 0.0),
+        point_b: Vec3::new(0.0, 0.5, 0.0),
+        radius: 0.5,
+    };
+}
+
+impl Default for SdfCapsule {
     fn default() -> Self {
         Self::ONE
     }
