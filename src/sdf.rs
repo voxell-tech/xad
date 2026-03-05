@@ -19,7 +19,7 @@ use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
 
 use crate::sdf::primitves::{
     SdfCapsule, SdfCuboid, SdfPrimitivePlugin, SdfRoundCuboid,
-    SdfSphere,
+    SdfSphere, SdfTorus,
 };
 use crate::sdf::transform::{SdfGlobalTransform, SdfTransformPlugin};
 
@@ -71,6 +71,10 @@ impl Plugin for SdfPlugin {
                             |b: &mut SdfBuffers| {
                                 &mut b.capsule_buffer
                             },
+                        )),
+                        update_primitive_buffers.with_input((
+                            PrimitiveType::Torus,
+                            |b: &mut SdfBuffers| &mut b.torus_buffer,
                         )),
                     ),
                     update_input_buffers,
@@ -136,6 +140,7 @@ impl ViewNode for SdfNode {
             Some(cuboid_buffer_binding),
             Some(round_cuboid_buffer_binding),
             Some(capsule_buffer_binding),
+            Some(torus_buffer_binding),
         ) = (
             pipeline_cache
                 .get_render_pipeline(sdf_pipeline.pipeline_id),
@@ -146,6 +151,7 @@ impl ViewNode for SdfNode {
             sdf_buffers.cuboid_buffer.binding(),
             sdf_buffers.round_cuboid_buffer.binding(),
             sdf_buffers.capsule_buffer.binding(),
+            sdf_buffers.torus_buffer.binding(),
         )
         else {
             return Ok(());
@@ -177,6 +183,7 @@ impl ViewNode for SdfNode {
                     cuboid_buffer_binding,
                     round_cuboid_buffer_binding,
                     capsule_buffer_binding,
+                    torus_buffer_binding,
                 )),
             );
 
@@ -231,6 +238,7 @@ struct SdfBuffers {
     cuboid_buffer: BufferVec<SdfCuboid>,
     round_cuboid_buffer: BufferVec<SdfRoundCuboid>,
     capsule_buffer: BufferVec<SdfCapsule>,
+    torus_buffer: BufferVec<SdfTorus>,
 }
 
 fn update_input_buffers(
@@ -309,6 +317,8 @@ fn init_sdf_buffers(mut commands: Commands) {
     );
     let capsule_buffer =
         create_buffer_vec::<SdfCapsule>("sdf_capsule_buffer");
+    let torus_buffer =
+        create_buffer_vec::<SdfTorus>("sdf_torus_buffer");
 
     commands.insert_resource(SdfBuffers {
         input_buffer,
@@ -316,6 +326,7 @@ fn init_sdf_buffers(mut commands: Commands) {
         cuboid_buffer,
         round_cuboid_buffer,
         capsule_buffer,
+        torus_buffer,
     });
 }
 
@@ -348,6 +359,7 @@ fn init_sdf_pipeline(
                 storage_buffer_read_only::<SdfCuboid>(false),
                 storage_buffer_read_only::<SdfRoundCuboid>(false),
                 storage_buffer_read_only::<SdfCapsule>(false),
+                storage_buffer_read_only::<SdfTorus>(false),
             ),
         ),
     );
@@ -390,6 +402,7 @@ enum PrimitiveType {
     Cuboid,
     RoundCuboid,
     Capsule,
+    Torus,
 }
 
 #[derive(Component, Debug, Clone, Copy)]

@@ -14,6 +14,7 @@ impl Plugin for SdfPrimitivePlugin {
             ExtractComponentPlugin::<SdfCuboid>::default(),
             ExtractComponentPlugin::<SdfRoundCuboid>::default(),
             ExtractComponentPlugin::<SdfCapsule>::default(),
+            ExtractComponentPlugin::<SdfTorus>::default(),
         ));
     }
 }
@@ -116,6 +117,34 @@ impl SdfCapsule {
 }
 
 impl Default for SdfCapsule {
+    fn default() -> Self {
+        Self::ONE
+    }
+}
+
+#[derive(
+    ExtractComponent,
+    Component,
+    Reflect,
+    ShaderType,
+    Debug,
+    Clone,
+    Copy,
+)]
+
+pub struct SdfTorus {
+    pub ring_radius: f32,
+    pub tube_radius: f32,
+}
+
+impl SdfTorus {
+    pub const ONE: Self = Self {
+        ring_radius: 0.3,
+        tube_radius: 0.1,
+    };
+}
+
+impl Default for SdfTorus {
     fn default() -> Self {
         Self::ONE
     }
