@@ -26,9 +26,22 @@ struct SdfRoundCuboid {
     radius: f32,
 }
 
+struct SdfCapsule {
+    point_a: vec3f,
+    point_b: vec3f,
+    radius: f32,
+}
+
+struct SdfTorus {
+    ring_radius: f32,
+    tube_radius: f32,
+}
+
 const SPHERE: u32 = 0;
 const CUBOID: u32 = 1;
 const ROUND_CUBOID: u32 = 2;
+const CAPSULE: u32 = 3;
+const TORUS: u32 = 4;
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
@@ -38,6 +51,8 @@ const ROUND_CUBOID: u32 = 2;
 @group(0) @binding(5) var<storage> spheres: array<SdfSphere>;
 @group(0) @binding(6) var<storage> cuboids: array<SdfCuboid>;
 @group(0) @binding(7) var<storage> round_cuboids: array<SdfRoundCuboid>;
+@group(0) @binding(8) var<storage> capsules: array<SdfCapsule>;
+@group(0) @binding(9) var<storage> toruses: array<SdfTorus>;
 
 // SDF primitives - https://iquilezles.org/articles/distfunctions/
 fn sd_sphere(point: vec3f, radius: f32) -> f32 {
@@ -57,6 +72,13 @@ fn sd_round_cuboid(point: vec3f, extent: vec3f, radius: f32) -> f32 {
 fn sd_torus(point: vec3f, t: vec2f) -> f32 {
     let q = vec2f(length(point.xz) - t.x, point.y);
     return length(q) - t.y;
+}
+
+fn sd_capsule(point: vec3f, point_a: vec3f, point_b: vec3f, radius: f32) -> f32 {
+    let vec_pa = point - point_a;
+    let vec_ba = point_b - point_a;
+    let h = clamp(dot(vec_pa, vec_ba) / dot(vec_ba, vec_ba), 0.0, 1.0);
+    return length(vec_pa - vec_ba * h) - radius;
 }
 
 /// Scene composition.
@@ -85,6 +107,15 @@ fn composition(point: vec3f) -> f32 {
             case ROUND_CUBOID {
                 let round_cuboid = round_cuboids[input.primitive_index];
                 sdf_dist = sd_round_cuboid(sample_point, round_cuboid.extents, round_cuboid.radius);
+            }
+            case CAPSULE {
+                let capsule = capsules[input.primitive_index];
+                sdf_dist = sd_capsule(sample_point, capsule.point_a, capsule.point_b, capsule.radius);
+            }
+            case TORUS {
+                let torus = toruses[input.primitive_index];
+                let t = vec2f(torus.ring_radius, torus.tube_radius);
+                sdf_dist = sd_torus(sample_point, t);
             }
         };
 
