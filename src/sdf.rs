@@ -17,12 +17,14 @@ use bevy::render::view::{
 };
 use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
 
+use crate::sdf::boolean::{BooleanOp, SdfBooleanPlugin, SdfGroup};
 use crate::sdf::primitves::{
     SdfCapsule, SdfCuboid, SdfPrimitivePlugin, SdfRoundCuboid,
     SdfSphere, SdfTorus,
 };
 use crate::sdf::transform::{SdfGlobalTransform, SdfTransformPlugin};
 
+pub mod boolean;
 pub mod primitves;
 pub mod transform;
 
@@ -35,6 +37,7 @@ impl Plugin for SdfPlugin {
         app.add_plugins((
             SdfTransformPlugin,
             SdfPrimitivePlugin,
+            SdfBooleanPlugin,
             ExtractComponentPlugin::<SdfCamera>::default(),
             UniformComponentPlugin::<SdfCamera>::default(),
         ));
@@ -242,7 +245,17 @@ struct SdfBuffers {
 }
 
 fn update_input_buffers(
-    q_transforms: Query<(
+    q_primitives: Query<
+        (
+            &SdfGlobalTransform,
+            &PrimitiveType,
+            &PrimitiveIndex,
+            Entity,
+        ),
+        Without<ChildOf>,
+    >,
+    q_groups: Query<(Entity, &SdfGroup)>,
+    q_operand: Query<(
         &SdfGlobalTransform,
         &PrimitiveType,
         &PrimitiveIndex,
@@ -251,17 +264,50 @@ fn update_input_buffers(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
-    // TODO: Optimize this to only update changed/added/removed transform!
     buffers.input_buffer.clear();
-    let mut capacity = 0;
-    for (transform, ty, index) in q_transforms.iter() {
-        buffers
-            .input_buffer
-            .push(SdfInput::new(transform, ty, index));
-        capacity += 1;
+
+    // Ungrouped primitives
+    for (transform, ty, index, _entity) in q_primitives.iter() {
+        buffers.input_buffer.push(SdfInput::new(
+            transform,
+            ty,
+            index,
+            0,
+            BooleanOp::Union as u32,
+        ));
     }
 
-    if capacity > 0 {
+    // Grouped primitives
+    for (group_entity, group) in q_groups.iter() {
+        if group.operands.is_empty() {
+            continue;
+        }
+
+        let group_id = group_entity.to_bits() as u32 + 1;
+
+        for (i, (operand_entity, op)) in
+            group.operands.iter().enumerate()
+        {
+            let Ok((transform, ty, index)) =
+                q_operand.get(*operand_entity)
+            else {
+                continue;
+            };
+
+            let effective_op =
+                if i == 0 { BooleanOp::Union } else { *op };
+
+            buffers.input_buffer.push(SdfInput::new(
+                transform,
+                ty,
+                index,
+                group_id,
+                effective_op as u32,
+            ));
+        }
+    }
+
+    if !buffers.input_buffer.is_empty() {
         buffers
             .input_buffer
             .write_buffer(&render_device, &render_queue);
@@ -450,6 +496,8 @@ struct SdfInput {
     pub scale: f32,
     pub primitive_type: u32,
     pub primitive_index: u32,
+    pub group_id: u32,
+    pub boolean_op: u32,
 }
 
 impl SdfInput {
@@ -457,6 +505,8 @@ impl SdfInput {
         global_transform: &SdfGlobalTransform,
         ty: &PrimitiveType,
         index: &PrimitiveIndex,
+        group_id: u32,
+        boolean_op: u32,
     ) -> Self {
         Self {
             local_from_world: Affine3::from(
@@ -468,6 +518,8 @@ impl SdfInput {
             // Index 0 is for default value.
             // TODO: We could cache only primitives with different settings?
             primitive_index: index.0 + 1,
+            group_id,
+            boolean_op,
         }
     }
 }

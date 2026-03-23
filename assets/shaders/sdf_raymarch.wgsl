@@ -11,6 +11,8 @@ struct SdfInput {
     scale: f32,
     primitive_type: u32,
     primitive_index: u32,
+    group_id: u32,
+    boolean_op: u32,
 };
 
 struct SdfSphere {
@@ -42,6 +44,12 @@ const CUBOID: u32 = 1;
 const ROUND_CUBOID: u32 = 2;
 const CAPSULE: u32 = 3;
 const TORUS: u32 = 4;
+
+// Boolean operations for grouping primitives.
+const OP_UNION: u32 = 0u;
+const OP_DIFFERENCE: u32 = 1u;
+const OP_INTERSECTION: u32 = 2u;
+const OP_EXCLUSION: u32 = 3u;
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
@@ -81,6 +89,16 @@ fn sd_capsule(point: vec3f, point_a: vec3f, point_b: vec3f, radius: f32) -> f32 
     return length(vec_pa - vec_ba * h) - radius;
 }
 
+fn apply_op(op: u32, acc: f32, d: f32) -> f32 {
+    switch op {
+        case OP_UNION:        { return min(acc, d); }
+        case OP_DIFFERENCE:   { return max(acc, -d); }
+        case OP_INTERSECTION: { return max(acc, d); }
+        case OP_EXCLUSION:    { return max(min(acc, d), -max(acc, d)); }
+        default:              { return min(acc, d); }
+    }
+}
+
 /// Scene composition.
 fn composition(point: vec3f) -> f32 {
     let len = arrayLength(&inputs);
@@ -89,11 +107,14 @@ fn composition(point: vec3f) -> f32 {
     // TODO: Implement acceleration structure (BVH?) to prevent looping over
     // the entire transform buffer.
     // TODO: Support different SDF primitives.
+    var acc          = sdf_camera.far_plane;
+    var active_group = 0u;
+
     for (var i = 0u; i < len; i++) {
         let input = inputs[i];
         let sample_point = ((vec4f(point, 1.0) * input.local_from_world).xyz) / input.scale;
 
-        var sdf_dist = dist;
+        var sdf_dist = sdf_camera.far_plane;
         switch input.primitive_type {
             default { }
             case SPHERE {
@@ -119,7 +140,31 @@ fn composition(point: vec3f) -> f32 {
             }
         };
 
-        dist = min(dist, sdf_dist * input.scale);
+        let d = sdf_dist * input.scale;
+
+        if input.group_id == 0u {
+            // Ungrouped, commit any open group, then union into scene.
+            if active_group != 0u {
+                dist = min(dist, acc);
+                active_group = 0u;
+            }
+            dist = min(dist, d);
+        } else if input.group_id != active_group {
+            // New group, commit previous group if open, reset accumulator.
+            if active_group != 0u {
+                dist = min(dist, acc);
+            }
+            acc = d;
+            active_group = input.group_id;
+        } else {
+            // Same group, apply the declared boolean operation.
+            acc = apply_op(input.boolean_op, acc, d);
+        }
+    }
+
+    // Commit the last open group.
+    if active_group != 0u {
+        dist = min(dist, acc);
     }
 
     return dist;

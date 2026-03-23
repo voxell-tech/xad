@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use xad::XadPlugin;
 use xad::camera::CameraController;
 use xad::sdf::SdfCamera;
+use xad::sdf::boolean::SdfGroup;
 use xad::sdf::primitves::{
     SdfCapsule, SdfCuboid, SdfRoundCuboid, SdfSphere, SdfTorus,
 };
@@ -33,6 +34,7 @@ fn test_setup(
         SdfCamera::default(),
     ));
 
+    // Ungrouped primitive grid
     for z in 0..3 {
         for y in 0..3 {
             for x in 0..5 {
@@ -70,11 +72,109 @@ fn test_setup(
         }
     }
 
-    let mesh =
-        Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(10.0))));
-    let mat =
-        MeshMaterial3d(materials.add(StandardMaterial::default()));
-    commands.spawn((mesh, mat, Transform::default()));
+    // Boolean groups
+    // Difference: sphere - cube
+    let sphere = commands
+        .spawn((SdfSphere { radius: 0.6 }, SdfTransform::default()))
+        .id();
+    let cube = commands
+        .spawn((
+            SdfCuboid {
+                extents: Vec3::splat(0.4),
+            },
+            SdfTransform::default(),
+        ))
+        .id();
+    commands.spawn((
+        SdfGroup::new().add(sphere).subtract(cube),
+        SdfTransform::default()
+            .with_translation(Vec3::new(0.0, 0.0, -3.0)),
+    ));
+
+    // Intersection: capsule ∩ torus
+    let capsule = commands
+        .spawn((
+            SdfCapsule {
+                point_a: Vec3::new(0.0, -0.5, 0.0),
+                point_b: Vec3::new(0.0, 0.5, 0.0),
+                radius: 0.4,
+            },
+            SdfTransform::default(),
+        ))
+        .id();
+    let torus = commands
+        .spawn((
+            SdfTorus {
+                ring_radius: 0.5,
+                tube_radius: 0.25,
+            },
+            SdfTransform::default(),
+        ))
+        .id();
+    commands.spawn((
+        SdfGroup::new().add(capsule).intersect(torus),
+        SdfTransform::default()
+            .with_translation(Vec3::new(2.0, 0.0, -3.0)),
+    ));
+
+    // Exclusion: sphere XOR sphere
+    let sphere_a = commands
+        .spawn((
+            SdfSphere { radius: 0.45 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(-0.2, 0.0, 0.0)),
+        ))
+        .id();
+    let sphere_b = commands
+        .spawn((
+            SdfSphere { radius: 0.45 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.2, 0.0, 0.0)),
+        ))
+        .id();
+    commands.spawn((
+        SdfGroup::new().add(sphere_a).exclude(sphere_b),
+        SdfTransform::default()
+            .with_translation(Vec3::new(4.0, 0.0, -3.0)),
+    ));
+
+    // Multiple subtractions: sphere - cube_top - capsule
+    let sphere = commands
+        .spawn((SdfSphere { radius: 0.65 }, SdfTransform::default()))
+        .id();
+    let cube_top = commands
+        .spawn((
+            SdfCuboid {
+                extents: Vec3::new(0.4, 0.3, 0.4),
+            },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.0, 0.35, 0.0)),
+        ))
+        .id();
+    let capsule = commands
+        .spawn((
+            SdfCapsule {
+                point_a: Vec3::new(-0.8, 0.0, 0.0),
+                point_b: Vec3::new(0.8, 0.0, 0.0),
+                radius: 0.18,
+            },
+            SdfTransform::default(),
+        ))
+        .id();
+    commands.spawn((
+        SdfGroup::new()
+            .add(sphere)
+            .subtract(cube_top)
+            .subtract(capsule),
+        SdfTransform::default()
+            .with_translation(Vec3::new(-2.0, 0.0, -3.0)),
+    ));
+
+    commands.spawn((
+        Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(10.0)))),
+        MeshMaterial3d(materials.add(StandardMaterial::default())),
+        Transform::default(),
+    ));
 }
 
 fn rotate_sdf(
