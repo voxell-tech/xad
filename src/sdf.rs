@@ -17,7 +17,7 @@ use bevy::render::view::{
 };
 use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
 
-use crate::sdf::boolean::{BooleanOp, SdfBooleanPlugin, SdfGroup};
+use crate::sdf::boolean::{BooleanOp, SdfBooleanPlugin, SdfOperand};
 use crate::sdf::primitves::{
     SdfCapsule, SdfCuboid, SdfPrimitivePlugin, SdfRoundCuboid,
     SdfSphere, SdfTorus,
@@ -245,20 +245,11 @@ struct SdfBuffers {
 }
 
 fn update_input_buffers(
-    q_primitives: Query<
-        (
-            &SdfGlobalTransform,
-            &PrimitiveType,
-            &PrimitiveIndex,
-            Entity,
-        ),
-        Without<ChildOf>,
-    >,
-    q_groups: Query<(Entity, &SdfGroup)>,
-    q_operand: Query<(
+    q_primitives: Query<(
         &SdfGlobalTransform,
         &PrimitiveType,
         &PrimitiveIndex,
+        Option<&SdfOperand>,
     )>,
     mut buffers: ResMut<SdfBuffers>,
     render_device: Res<RenderDevice>,
@@ -266,45 +257,43 @@ fn update_input_buffers(
 ) {
     buffers.input_buffer.clear();
 
-    // Ungrouped primitives
-    for (transform, ty, index, _entity) in q_primitives.iter() {
-        buffers.input_buffer.push(SdfInput::new(
-            transform,
-            ty,
-            index,
-            0,
-            BooleanOp::Union as u32,
-        ));
-    }
+    let mut sorted_inputs =
+        Vec::with_capacity(q_primitives.iter().len());
 
-    // Grouped primitives
-    for (group_entity, group) in q_groups.iter() {
-        if group.operands.is_empty() {
-            continue;
-        }
-
-        let group_id = group_entity.to_bits() as u32 + 1;
-
-        for (i, (operand_entity, op)) in
-            group.operands.iter().enumerate()
-        {
-            let Ok((transform, ty, index)) =
-                q_operand.get(*operand_entity)
-            else {
-                continue;
-            };
-
-            let effective_op =
-                if i == 0 { BooleanOp::Union } else { *op };
-
-            buffers.input_buffer.push(SdfInput::new(
-                transform,
-                ty,
-                index,
-                group_id,
-                effective_op as u32,
+    for (transform, ty, index, operand_opt) in q_primitives.iter() {
+        if let Some(operand) = operand_opt {
+            // Grouped primitive
+            sorted_inputs.push((
+                operand.group_id,
+                operand.order,
+                SdfInput::new(
+                    transform,
+                    ty,
+                    index,
+                    operand.group_id,
+                    operand.op as u32,
+                ),
+            ));
+        } else {
+            // Ungrouped primitive
+            sorted_inputs.push((
+                0,
+                0,
+                SdfInput::new(
+                    transform,
+                    ty,
+                    index,
+                    0,
+                    BooleanOp::Union as u32,
+                ),
             ));
         }
+    }
+
+    sorted_inputs.sort_unstable_by_key(|(g, o, _)| (*g, *o));
+
+    for (_, _, input) in sorted_inputs {
+        buffers.input_buffer.push(input);
     }
 
     if !buffers.input_buffer.is_empty() {

@@ -86,7 +86,7 @@ fn test_setup(
         ))
         .id();
     commands.spawn((
-        SdfGroup::new().add(sphere).subtract(cube),
+        SdfGroup::new().union(sphere).difference(cube),
         SdfTransform::default()
             .with_translation(Vec3::new(0.0, 0.0, -3.0)),
     ));
@@ -112,7 +112,7 @@ fn test_setup(
         ))
         .id();
     commands.spawn((
-        SdfGroup::new().add(capsule).intersect(torus),
+        SdfGroup::new().union(capsule).intersect(torus),
         SdfTransform::default()
             .with_translation(Vec3::new(2.0, 0.0, -3.0)),
     ));
@@ -133,7 +133,7 @@ fn test_setup(
         ))
         .id();
     commands.spawn((
-        SdfGroup::new().add(sphere_a).exclude(sphere_b),
+        SdfGroup::new().union(sphere_a).exclude(sphere_b),
         SdfTransform::default()
             .with_translation(Vec3::new(4.0, 0.0, -3.0)),
     ));
@@ -163,9 +163,9 @@ fn test_setup(
         .id();
     commands.spawn((
         SdfGroup::new()
-            .add(sphere)
-            .subtract(cube_top)
-            .subtract(capsule),
+            .union(sphere)
+            .difference(cube_top)
+            .difference(capsule),
         SdfTransform::default()
             .with_translation(Vec3::new(-2.0, 0.0, -3.0)),
     ));
