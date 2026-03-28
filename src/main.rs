@@ -5,7 +5,7 @@ use xad::camera::CameraController;
 use xad::sdf::SdfCamera;
 use xad::sdf::boolean::SdfGroup;
 use xad::sdf::primitves::{
-    SdfCapsule, SdfCuboid, SdfRoundCuboid, SdfSphere, SdfTorus,
+    SdfCapsule, SdfCuboid, SdfSphere, SdfTorus,
 };
 use xad::sdf::transform::SdfTransform;
 
@@ -34,44 +34,6 @@ fn test_setup(
         SdfCamera::default(),
     ));
 
-    // Ungrouped primitive grid
-    for z in 0..3 {
-        for y in 0..3 {
-            for x in 0..5 {
-                let (xf, yf, zf) = (x as f32, y as f32, z as f32);
-                let mut cmd = commands.spawn(SdfTransform {
-                    translation: Vec3::new(xf, yf, zf),
-                    scale: 1.0 - xf * 0.1 - yf * 0.1 - zf * 0.1,
-                    ..default()
-                });
-
-                if x == 0 {
-                    cmd.insert(SdfSphere { radius: 0.4 });
-                } else if x == 1 {
-                    cmd.insert(SdfCuboid {
-                        extents: Vec3::new(0.4, 0.3, 0.4),
-                    });
-                } else if x == 2 {
-                    cmd.insert(SdfRoundCuboid {
-                        extents: Vec3::new(0.4, 0.3, 0.4),
-                        radius: 0.3 - yf * 0.1,
-                    });
-                } else if x == 3 {
-                    cmd.insert(SdfCapsule {
-                        point_a: Vec3::new(0.0, -0.25, 0.0),
-                        point_b: Vec3::new(0.0, 0.25, 0.0),
-                        radius: 0.3,
-                    });
-                } else {
-                    cmd.insert(SdfTorus {
-                        ring_radius: 0.6,
-                        tube_radius: 0.3,
-                    });
-                }
-            }
-        }
-    }
-
     // Boolean groups
     // Difference: sphere - cube
     let sphere = commands
@@ -88,7 +50,7 @@ fn test_setup(
     commands.spawn((
         SdfGroup::new().union(sphere).difference(cube),
         SdfTransform::default()
-            .with_translation(Vec3::new(0.0, 0.0, -3.0)),
+            .with_translation(Vec3::new(0.0, 0.0, 0.0)),
     ));
 
     // Intersection: capsule ∩ torus
@@ -114,7 +76,7 @@ fn test_setup(
     commands.spawn((
         SdfGroup::new().union(capsule).intersect(torus),
         SdfTransform::default()
-            .with_translation(Vec3::new(2.0, 0.0, -3.0)),
+            .with_translation(Vec3::new(2.0, 0.0, 0.0)),
     ));
 
     // Exclusion: sphere XOR sphere
@@ -135,7 +97,7 @@ fn test_setup(
     commands.spawn((
         SdfGroup::new().union(sphere_a).exclude(sphere_b),
         SdfTransform::default()
-            .with_translation(Vec3::new(4.0, 0.0, -3.0)),
+            .with_translation(Vec3::new(4.0, 0.0, 0.0)),
     ));
 
     // Multiple subtractions: sphere - cube_top - capsule
@@ -167,7 +129,7 @@ fn test_setup(
             .difference(cube_top)
             .difference(capsule),
         SdfTransform::default()
-            .with_translation(Vec3::new(-2.0, 0.0, -3.0)),
+            .with_translation(Vec3::new(-2.0, 0.0, 0.0)),
     ));
 
     commands.spawn((
