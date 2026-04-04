@@ -255,6 +255,7 @@ fn update_input_buffers(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
+    // TODO: Optimize this to only update changed/added/removed transform!
     buffers.input_buffer.clear();
 
     let mut sorted_inputs =

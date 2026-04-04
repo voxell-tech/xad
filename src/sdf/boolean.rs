@@ -24,7 +24,7 @@ pub enum BooleanOp {
     Exclusion = 3,
 }
 
-#[derive(Component, Reflect, Debug, Clone, Default)]
+#[derive(Component, Reflect, Debug, Clone)]
 pub struct SdfGroup {
     pub(super) operands: Vec<(Entity, BooleanOp)>,
 }
@@ -37,24 +37,35 @@ pub struct SdfOperand {
 }
 
 impl SdfGroup {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(entity: Entity) -> Self {
+        Self {
+            operands: vec![(entity, BooleanOp::Union)],
+        }
     }
-    pub fn union(mut self, entity: Entity) -> Self {
-        self.operands.push((entity, BooleanOp::Union));
+
+    pub fn push_operand(
+        mut self,
+        entity: Entity,
+        op: BooleanOp,
+    ) -> Self {
+        self.operands.push((entity, op));
         self
     }
-    pub fn difference(mut self, entity: Entity) -> Self {
-        self.operands.push((entity, BooleanOp::Difference));
-        self
+
+    pub fn union(self, entity: Entity) -> Self {
+        self.push_operand(entity, BooleanOp::Union)
     }
-    pub fn intersect(mut self, entity: Entity) -> Self {
-        self.operands.push((entity, BooleanOp::Intersection));
-        self
+
+    pub fn difference(self, entity: Entity) -> Self {
+        self.push_operand(entity, BooleanOp::Difference)
     }
-    pub fn exclude(mut self, entity: Entity) -> Self {
-        self.operands.push((entity, BooleanOp::Exclusion));
-        self
+
+    pub fn intersect(self, entity: Entity) -> Self {
+        self.push_operand(entity, BooleanOp::Intersection)
+    }
+
+    pub fn exclude(self, entity: Entity) -> Self {
+        self.push_operand(entity, BooleanOp::Exclusion)
     }
 }
 
@@ -73,19 +84,11 @@ fn assign_sdf_group_children(
 
     let mut child_entities = Vec::with_capacity(group.operands.len());
 
-    for (i, (operand_entity, requested_op)) in
-        group.operands.iter().enumerate()
+    for (i, (operand_entity, op)) in group.operands.iter().enumerate()
     {
-        // Make the first operand always a union
-        let op = if i == 0 {
-            BooleanOp::Union
-        } else {
-            *requested_op
-        };
-
         commands.entity(*operand_entity).insert(SdfOperand {
             group_id,
-            op,
+            op: *op,
             order: i,
         });
 
