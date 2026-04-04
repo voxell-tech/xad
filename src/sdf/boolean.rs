@@ -84,15 +84,16 @@ fn assign_sdf_group_children(
 
     let mut child_entities = Vec::with_capacity(group.operands.len());
 
-    for (i, (operand_entity, op)) in group.operands.iter().enumerate()
+    for (i, &(operand_entity, op)) in
+        group.operands.iter().enumerate()
     {
-        commands.entity(*operand_entity).insert(SdfOperand {
+        commands.entity(operand_entity).insert(SdfOperand {
             group_id,
-            op: *op,
+            op,
             order: i,
         });
 
-        child_entities.push(*operand_entity);
+        child_entities.push(operand_entity);
     }
 
     commands.entity(group_entity).add_children(&child_entities);
