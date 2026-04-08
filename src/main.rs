@@ -6,8 +6,8 @@ use xad::sdf::SdfCamera;
 use xad::sdf::boolean::SdfGroup;
 use xad::sdf::primitves::{
     SdfSphere,
-    // SdfCapsule, 
-    // SdfCuboid, 
+    // SdfCapsule,
+    // SdfCuboid,
     // SdfTorus,
 };
 use xad::sdf::transform::SdfTransform;
@@ -55,7 +55,6 @@ fn test_setup(
             .with_translation(Vec3::new(-2.0, 0.0, 0.0)),
     ));
 
-
     // Intersection: sphere_a n sphere_b
     let sphere_a = commands
         .spawn((
@@ -100,7 +99,9 @@ fn test_setup(
         ))
         .id();
     commands.spawn((
-        SdfGroup::new(sphere_a).exclude(sphere_b).difference(sphere_c),
+        SdfGroup::new(sphere_a)
+            .exclude(sphere_b)
+            .difference(sphere_c),
         SdfTransform::default()
             .with_translation(Vec3::new(2.0, 0.0, 0.0)),
     ));
