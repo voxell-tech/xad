@@ -52,7 +52,7 @@ fn update_camera(
     if mouse_buttons.pressed(MouseButton::Right) {
         for event in mouse_motion.read() {
             camera.phi -= event.delta.x * camera.sensitivity;
-            camera.theta += event.delta.y * camera.sensitivity;
+            camera.theta -= event.delta.y * camera.sensitivity;
         }
     }
 
