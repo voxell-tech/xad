@@ -17,12 +17,14 @@ use bevy::render::view::{
 };
 use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
 
+use crate::sdf::boolean::{BooleanOp, SdfBooleanPlugin, SdfOperand};
 use crate::sdf::primitves::{
     SdfCapsule, SdfCuboid, SdfPrimitivePlugin, SdfRoundCuboid,
     SdfSphere, SdfTorus,
 };
 use crate::sdf::transform::{SdfGlobalTransform, SdfTransformPlugin};
 
+pub mod boolean;
 pub mod primitves;
 pub mod transform;
 
@@ -35,6 +37,7 @@ impl Plugin for SdfPlugin {
         app.add_plugins((
             SdfTransformPlugin,
             SdfPrimitivePlugin,
+            SdfBooleanPlugin,
             ExtractComponentPlugin::<SdfCamera>::default(),
             UniformComponentPlugin::<SdfCamera>::default(),
         ));
@@ -242,10 +245,11 @@ struct SdfBuffers {
 }
 
 fn update_input_buffers(
-    q_transforms: Query<(
+    q_primitives: Query<(
         &SdfGlobalTransform,
         &PrimitiveType,
         &PrimitiveIndex,
+        Option<&SdfOperand>,
     )>,
     mut buffers: ResMut<SdfBuffers>,
     render_device: Res<RenderDevice>,
@@ -253,15 +257,47 @@ fn update_input_buffers(
 ) {
     // TODO: Optimize this to only update changed/added/removed transform!
     buffers.input_buffer.clear();
-    let mut capacity = 0;
-    for (transform, ty, index) in q_transforms.iter() {
-        buffers
-            .input_buffer
-            .push(SdfInput::new(transform, ty, index));
-        capacity += 1;
+
+    let mut sorted_inputs =
+        Vec::with_capacity(q_primitives.iter().len());
+
+    for (transform, ty, index, operand_opt) in q_primitives.iter() {
+        if let Some(operand) = operand_opt {
+            // Grouped primitive
+            sorted_inputs.push((
+                operand.group_id,
+                operand.order,
+                SdfInput::new(
+                    transform,
+                    ty,
+                    index,
+                    operand.group_id,
+                    operand.op as u32,
+                ),
+            ));
+        } else {
+            // Ungrouped primitive
+            sorted_inputs.push((
+                0,
+                0,
+                SdfInput::new(
+                    transform,
+                    ty,
+                    index,
+                    0,
+                    BooleanOp::Union as u32,
+                ),
+            ));
+        }
     }
 
-    if capacity > 0 {
+    sorted_inputs.sort_unstable_by_key(|(g, o, _)| (*g, *o));
+
+    for (_, _, input) in sorted_inputs {
+        buffers.input_buffer.push(input);
+    }
+
+    if !buffers.input_buffer.is_empty() {
         buffers
             .input_buffer
             .write_buffer(&render_device, &render_queue);
@@ -450,6 +486,8 @@ struct SdfInput {
     pub scale: f32,
     pub primitive_type: u32,
     pub primitive_index: u32,
+    pub group_id: u32,
+    pub boolean_op: u32,
 }
 
 impl SdfInput {
@@ -457,6 +495,8 @@ impl SdfInput {
         global_transform: &SdfGlobalTransform,
         ty: &PrimitiveType,
         index: &PrimitiveIndex,
+        group_id: u32,
+        boolean_op: u32,
     ) -> Self {
         Self {
             local_from_world: Affine3::from(
@@ -468,6 +508,8 @@ impl SdfInput {
             // Index 0 is for default value.
             // TODO: We could cache only primitives with different settings?
             primitive_index: index.0 + 1,
+            group_id,
+            boolean_op,
         }
     }
 }
