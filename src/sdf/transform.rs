@@ -1,3 +1,4 @@
+use crate::sdf::boolean::{SdfOperandOf, SdfOperands};
 use bevy::math::Affine3A;
 use bevy::prelude::*;
 use bevy::render::extract_component::{
@@ -40,28 +41,30 @@ fn propagate_transform(
     // TODO: Use the Ref to skip unchanged transforms.
     mut q_root_transforms: Query<
         (&mut SdfGlobalTransform, Ref<SdfTransform>, Entity),
-        Without<ChildOf>,
+        Without<SdfOperandOf>,
     >,
     mut q_child_transforms: Query<
         (&mut SdfGlobalTransform, Ref<SdfTransform>),
-        With<ChildOf>,
+        With<SdfOperandOf>,
     >,
-    q_children: Query<&Children>,
+    q_operands: Query<&SdfOperands>,
 ) {
     for (mut global_transform, transform, entity) in
         q_root_transforms.iter_mut()
     {
         *global_transform = SdfGlobalTransform::from(*transform);
 
-        if let Ok(children) = q_children.get(entity) {
+        if let Ok(operands) = q_operands.get(entity) {
             // Iteratively propagate the transform.
             // TODO: Optimize this:
             // - Offer stack based recursive?
             // - Parallelize this algo!
             // - Static analysis, skip subtrees that are not mutated.
             let mut global_transforms = vec![*global_transform];
-            let mut children =
-                children.iter().map(|e| (e, 0)).collect::<Vec<_>>();
+            let mut children = operands
+                .iter()
+                .map(|e| (e, 0usize))
+                .collect::<Vec<_>>();
 
             while let Some((child, idx)) = children.pop()
                 && let Ok((
@@ -75,9 +78,9 @@ fn propagate_transform(
 
                 let new_idx = global_transforms.len();
                 global_transforms.push(*child_global_transform);
-                if let Ok(nested_children) = q_children.get(child) {
+                if let Ok(nested_operands) = q_operands.get(child) {
                     children.extend(
-                        nested_children.iter().map(|e| (e, new_idx)),
+                        nested_operands.iter().map(|e| (e, new_idx)),
                     );
                 }
             }

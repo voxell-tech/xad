@@ -16,8 +16,11 @@ use bevy::render::view::{
     ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms,
 };
 use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
+use std::collections::HashMap;
 
-use crate::sdf::boolean::{BooleanOp, SdfBooleanPlugin, SdfOperand};
+use crate::sdf::boolean::{
+    BooleanOp, SdfBooleanPlugin, SdfExtractedOperand,
+};
 use crate::sdf::primitves::{
     SdfCapsule, SdfCuboid, SdfPrimitivePlugin, SdfRoundCuboid,
     SdfSphere, SdfTorus,
@@ -249,7 +252,7 @@ fn update_input_buffers(
         &SdfGlobalTransform,
         &PrimitiveType,
         &PrimitiveIndex,
-        Option<&SdfOperand>,
+        Option<&SdfExtractedOperand>,
     )>,
     mut buffers: ResMut<SdfBuffers>,
     render_device: Res<RenderDevice>,
@@ -258,37 +261,34 @@ fn update_input_buffers(
     // TODO: Optimize this to only update changed/added/removed transform!
     buffers.input_buffer.clear();
 
+    let mut group_id_map: HashMap<Entity, u32> = HashMap::default();
+    let mut next_id: u32 = 1;
+
     let mut sorted_inputs =
         Vec::with_capacity(q_primitives.iter().len());
 
     for (transform, ty, index, operand_opt) in q_primitives.iter() {
-        if let Some(operand) = operand_opt {
+        let (group_id, order, op) = if let Some(operand) = operand_opt
+        {
             // Grouped primitive
-            sorted_inputs.push((
-                operand.group_id,
-                operand.order,
-                SdfInput::new(
-                    transform,
-                    ty,
-                    index,
-                    operand.group_id,
-                    operand.op as u32,
-                ),
-            ));
+            let gid = *group_id_map
+                .entry(operand.group_entity)
+                .or_insert_with(|| {
+                    let id = next_id;
+                    next_id += 1;
+                    id
+                });
+            (gid, operand.order, operand.op as u32)
         } else {
             // Ungrouped primitive
-            sorted_inputs.push((
-                0,
-                0,
-                SdfInput::new(
-                    transform,
-                    ty,
-                    index,
-                    0,
-                    BooleanOp::Union as u32,
-                ),
-            ));
-        }
+            (0, 0, BooleanOp::Union as u32)
+        };
+
+        sorted_inputs.push((
+            group_id,
+            order,
+            SdfInput::new(transform, ty, index, group_id, op),
+        ));
     }
 
     sorted_inputs.sort_unstable_by_key(|(g, o, _)| (*g, *o));
