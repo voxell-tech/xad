@@ -52,7 +52,11 @@ fn propagate_transform(
     for (mut global_transform, transform, entity) in
         q_root_transforms.iter_mut()
     {
-        *global_transform = SdfGlobalTransform::from(*transform);
+        // Only recompute the root global transform if its local changed.
+        let root_changed = transform.is_changed();
+        if root_changed {
+            *global_transform = SdfGlobalTransform::from(*transform);
+        }
 
         if let Ok(operands) = q_operands.get(entity) {
             // Iteratively propagate the transform.
@@ -63,24 +67,37 @@ fn propagate_transform(
             let mut global_transforms = vec![*global_transform];
             let mut children = operands
                 .iter()
-                .map(|e| (e, 0usize))
+                .map(|e| (e, 0usize, root_changed))
                 .collect::<Vec<_>>();
 
-            while let Some((child, idx)) = children.pop()
-                && let Ok((
-                    mut child_global_transform,
-                    child_transform,
-                )) = q_child_transforms.get_mut(child)
-            {
-                let global_transform = &global_transforms[idx];
-                *child_global_transform =
-                    global_transform.mul_transform(*child_transform);
+            let mut head = 0;
+            while head < children.len() {
+                let (child, idx, parent_changed) = children[head];
+                head += 1;
+
+                let Ok((mut child_global_transform, child_transform)) =
+                    q_child_transforms.get_mut(child)
+                else {
+                    continue;
+                };
+
+                let child_changed =
+                    parent_changed || child_transform.is_changed();
+
+                if child_changed {
+                    let global_transform = &global_transforms[idx];
+                    *child_global_transform = global_transform
+                        .mul_transform(*child_transform);
+                }
 
                 let new_idx = global_transforms.len();
                 global_transforms.push(*child_global_transform);
+
                 if let Ok(nested_operands) = q_operands.get(child) {
                     children.extend(
-                        nested_operands.iter().map(|e| (e, new_idx)),
+                        nested_operands
+                            .iter()
+                            .map(|e| (e, new_idx, child_changed)),
                     );
                 }
             }
@@ -126,10 +143,12 @@ impl Default for SdfTransform {
 impl From<SdfTransform> for SdfGlobalTransform {
     fn from(value: SdfTransform) -> Self {
         Self {
-            world_from_local: Affine3A::from_rotation_translation(
-                value.rotation,
-                value.translation,
-            ),
+            world_from_local:
+                Affine3A::from_scale_rotation_translation(
+                    Vec3::splat(value.scale),
+                    value.rotation,
+                    value.translation,
+                ),
             scale: value.scale,
         }
     }
