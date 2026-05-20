@@ -254,18 +254,32 @@ fn update_input_buffers(
         &PrimitiveIndex,
         Option<&SdfExtractedOperand>,
     )>,
+    q_changed: Query<
+        (),
+        Or<(
+            Changed<SdfGlobalTransform>,
+            Changed<PrimitiveIndex>,
+            Added<PrimitiveIndex>,
+        )>,
+    >,
     mut buffers: ResMut<SdfBuffers>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
     // TODO: Optimize this to only update changed/added/removed transform!
+    if q_changed.is_empty() {
+        return;
+    }
+
     buffers.input_buffer.clear();
 
-    let mut group_id_map: HashMap<Entity, u32> = HashMap::default();
+    let count = q_primitives.iter().len();
+    let mut group_id_map: HashMap<Entity, u32> =
+        HashMap::with_capacity(count);
     let mut next_id: u32 = 1;
 
-    let mut sorted_inputs =
-        Vec::with_capacity(q_primitives.iter().len());
+    let mut sorted_inputs: Vec<(u32, usize, SdfInput)> =
+        Vec::with_capacity(count);
 
     for (transform, ty, index, operand_opt) in q_primitives.iter() {
         let (group_id, order, op) = if let Some(operand) = operand_opt
@@ -311,12 +325,20 @@ fn update_primitive_buffers<
     InMut((ty, get_buffer)): InMut<(PrimitiveType, F)>,
     mut commands: Commands,
     q_primitives: Query<(&T, Entity)>,
+    q_changed: Query<(), Or<(Changed<T>, Added<T>)>>,
+    removed: RemovedComponents<T>,
     mut buffers: ResMut<SdfBuffers>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
     // TODO: Optimize this to only update changed/added/removed primitive!
     let buffer = get_buffer(&mut buffers);
+
+    if q_changed.is_empty() && removed.is_empty() && buffer.len() > 1
+    {
+        return;
+    }
+
     buffer.clear();
     // TODO: This could be replaced with a custom self managed empty buffer
     // next time. (This is needed right now since a `BufferVec` won't be created

@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use xad::XadPlugin;
 use xad::camera::CameraController;
 use xad::sdf::SdfCamera;
-use xad::sdf::boolean::{IntoSdfNode, SdfGroup};
+use xad::sdf::boolean::{SdfGroup, SdfOperandOf, SdfOperands};
 use xad::sdf::primitves::{
     SdfSphere,
     // SdfCapsule,
@@ -39,95 +39,71 @@ fn test_setup(
 
     // Boolean groups
     // Difference: sphere_a - sphere_b
-    commands
-        .spawn(
+    let sphere_a = commands
+        .spawn((SdfSphere { radius: 0.6 }, SdfTransform::default()))
+        .id();
+    let sphere_b = commands
+        .spawn((
+            SdfSphere { radius: 0.6 },
             SdfTransform::default()
-                .with_translation(Vec3::new(-2.0, 0.0, 0.0)),
-        )
-        .queue(
-            SdfGroup::new()
-                .add(
-                    (
-                        SdfSphere { radius: 0.6 },
-                        SdfTransform::default(),
-                    )
-                        .union(),
-                )
-                .add(
-                    (
-                        SdfSphere { radius: 0.6 },
-                        SdfTransform::default().with_translation(
-                            Vec3::new(0.3, 0.0, 0.0),
-                        ),
-                    )
-                        .difference(),
-                ),
-        );
+                .with_translation(Vec3::new(0.3, 0.0, 0.0)),
+        ))
+        .id();
+    commands.spawn((
+        SdfGroup::new(sphere_a).difference(sphere_b),
+        SdfTransform::default()
+            .with_translation(Vec3::new(-2.0, 0.0, 0.0)),
+    ));
 
     // Intersection: sphere_a n sphere_b
-    commands
-        .spawn(
+    let sphere_a = commands
+        .spawn((
+            SdfSphere { radius: 0.5 },
             SdfTransform::default()
-                .with_translation(Vec3::new(0.0, 0.0, 0.0)),
-        )
-        .queue(
-            SdfGroup::new()
-                .add(
-                    (
-                        SdfSphere { radius: 0.5 },
-                        SdfTransform::default().with_translation(
-                            Vec3::new(-0.2, 0.0, 0.0),
-                        ),
-                    )
-                        .union(),
-                )
-                .add(
-                    (
-                        SdfSphere { radius: 0.5 },
-                        SdfTransform::default().with_translation(
-                            Vec3::new(0.2, 0.0, 0.0),
-                        ),
-                    )
-                        .intersect(),
-                ),
-        );
+                .with_translation(Vec3::new(-0.2, 0.0, 0.0)),
+        ))
+        .id();
+    let sphere_b = commands
+        .spawn((
+            SdfSphere { radius: 0.5 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.2, 0.0, 0.0)),
+        ))
+        .id();
+    commands.spawn((
+        SdfGroup::new(sphere_a).intersect(sphere_b),
+        SdfTransform::default(),
+    ));
 
     // Exclusion: (sphere_a XOR sphere_b) - sphere_c
-    commands
-        .spawn(
+    let sphere_a = commands
+        .spawn((
+            SdfSphere { radius: 0.45 },
             SdfTransform::default()
-                .with_translation(Vec3::new(2.0, 0.0, 0.0)),
-        )
-        .queue(
-            SdfGroup::new()
-                .add(
-                    (
-                        SdfSphere { radius: 0.45 },
-                        SdfTransform::default().with_translation(
-                            Vec3::new(-0.2, 0.0, 0.0),
-                        ),
-                    )
-                        .union(),
-                )
-                .add(
-                    (
-                        SdfSphere { radius: 0.45 },
-                        SdfTransform::default().with_translation(
-                            Vec3::new(0.2, 0.0, 0.0),
-                        ),
-                    )
-                        .exclude(),
-                )
-                .add(
-                    (
-                        SdfSphere { radius: 0.3 },
-                        SdfTransform::default().with_translation(
-                            Vec3::new(0.0, 0.3, 0.0),
-                        ),
-                    )
-                        .difference(),
-                ),
-        );
+                .with_translation(Vec3::new(-0.2, 0.0, 0.0)),
+        ))
+        .id();
+    let sphere_b = commands
+        .spawn((
+            SdfSphere { radius: 0.45 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.2, 0.0, 0.0)),
+        ))
+        .id();
+    let sphere_c = commands
+        .spawn((
+            SdfSphere { radius: 0.3 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.0, 0.3, 0.0)),
+        ))
+        .id();
+    commands.spawn((
+        SdfGroup::new(sphere_a)
+            .exclude(sphere_b)
+            .difference(sphere_c),
+        SdfTransform::default()
+            .with_translation(Vec3::new(2.0, 0.0, 0.0)),
+    ));
 
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(10.0)))),
@@ -137,7 +113,10 @@ fn test_setup(
 }
 
 fn rotate_sdf(
-    mut q_transforms: Query<&mut SdfTransform>,
+    mut q_transforms: Query<
+        &mut SdfTransform,
+        (With<SdfOperands>, Without<SdfOperandOf>),
+    >,
     time: Res<Time>,
 ) {
     for (i, mut transform) in q_transforms.iter_mut().enumerate() {

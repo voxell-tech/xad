@@ -1,4 +1,3 @@
-use crate::sdf::transform::SdfTransform;
 use bevy::prelude::*;
 use bevy::render::extract_component::{
     ExtractComponent, ExtractComponentPlugin,
@@ -11,9 +10,11 @@ impl Plugin for SdfBooleanPlugin {
         app.register_type::<BooleanOp>()
             .register_type::<SdfBooleanOp>()
             .register_type::<SdfOrder>()
+            .register_type::<SdfGroup>()
             .add_plugins(
                 ExtractComponentPlugin::<SdfOperandOf>::default(),
-            );
+            )
+            .add_observer(assign_sdf_group_children);
     }
 }
 
@@ -26,6 +27,7 @@ pub enum BooleanOp {
     Exclusion = 3,
 }
 
+/// This entity is a member of an SDF group (the group entity carries [`SdfOperands`]).
 #[derive(Component)]
 #[relationship(relationship_target = SdfOperands)]
 pub struct SdfOperandOf(pub Entity);
@@ -50,6 +52,7 @@ impl ExtractComponent for SdfOperandOf {
     }
 }
 
+/// The group entity owns references to all its operand children.
 #[derive(Component, Default)]
 #[relationship_target(relationship = SdfOperandOf, linked_spawn)]
 pub struct SdfOperands(Vec<Entity>);
@@ -78,8 +81,7 @@ pub struct SdfBooleanOp(pub BooleanOp);
 )]
 pub struct SdfOrder(pub usize);
 
-/// Only exists in the render world.
-/// Produced by SdfOperandOf's ExtractComponent impl.
+/// Render-world copy produced by [`SdfOperandOf`]'s [`ExtractComponent`] impl.
 #[derive(Component, Clone)]
 pub struct SdfExtractedOperand {
     pub group_entity: Entity,
@@ -87,138 +89,76 @@ pub struct SdfExtractedOperand {
     pub order: usize,
 }
 
-/// Object-safe trait for inserting a type-erased primitive bundle into the world.
-pub trait PrimitiveBundle: Send + Sync + 'static {
-    fn insert_into(
-        self: Box<Self>,
-        world: &mut World,
-        entity: Entity,
-    );
-}
-
-impl<T: Bundle> PrimitiveBundle for T {
-    fn insert_into(
-        self: Box<Self>,
-        world: &mut World,
-        entity: Entity,
-    ) {
-        world.entity_mut(entity).insert(*self);
-    }
-}
-
-pub enum SdfOperandDesc {
-    Entity(Entity),
-    Inline {
-        bundle: Box<dyn PrimitiveBundle>,
-        transform: SdfTransform,
-    },
-    NestedGroup {
-        builder: SdfGroup,
-        transform: SdfTransform,
-    },
-}
-
+#[derive(Component, Reflect, Debug, Clone)]
 pub struct SdfGroup {
-    operands: Vec<(BooleanOp, SdfOperandDesc)>,
+    pub(crate) operands: Vec<(Entity, BooleanOp)>,
 }
 
 impl SdfGroup {
-    pub fn new() -> Self {
+    /// Start a new group with `entity` as the first operand (unioned).
+    pub fn new(entity: Entity) -> Self {
         Self {
-            operands: Vec::new(),
+            operands: vec![(entity, BooleanOp::Union)],
         }
     }
 
-    pub fn add(mut self, node: (BooleanOp, SdfOperandDesc)) -> Self {
-        self.operands.push(node);
+    pub fn push_operand(
+        mut self,
+        entity: Entity,
+        op: BooleanOp,
+    ) -> Self {
+        self.operands.push((entity, op));
         self
     }
-}
 
-/// Anything that can become a group operand by specifying a boolean operation.
-pub trait IntoSdfNode: Sized {
-    fn into_desc(self) -> SdfOperandDesc;
+    pub fn union(self, entity: Entity) -> Self {
+        self.push_operand(entity, BooleanOp::Union)
+    }
 
-    fn into_node(self, op: BooleanOp) -> (BooleanOp, SdfOperandDesc) {
-        (op, self.into_desc())
+    pub fn difference(self, entity: Entity) -> Self {
+        self.push_operand(entity, BooleanOp::Difference)
     }
-    fn union(self) -> (BooleanOp, SdfOperandDesc) {
-        self.into_node(BooleanOp::Union)
+
+    pub fn intersect(self, entity: Entity) -> Self {
+        self.push_operand(entity, BooleanOp::Intersection)
     }
-    fn difference(self) -> (BooleanOp, SdfOperandDesc) {
-        self.into_node(BooleanOp::Difference)
-    }
-    fn intersect(self) -> (BooleanOp, SdfOperandDesc) {
-        self.into_node(BooleanOp::Intersection)
-    }
-    fn exclude(self) -> (BooleanOp, SdfOperandDesc) {
-        self.into_node(BooleanOp::Exclusion)
+
+    pub fn exclude(self, entity: Entity) -> Self {
+        self.push_operand(entity, BooleanOp::Exclusion)
     }
 }
 
-impl<T: PrimitiveBundle> IntoSdfNode for (T, SdfTransform) {
-    fn into_desc(self) -> SdfOperandDesc {
-        SdfOperandDesc::Inline {
-            bundle: Box::new(self.0),
-            transform: self.1,
-        }
+/// Fires when [`SdfGroup`] is added to an entity.
+/// Inserts relationship components on each operand and registers them
+/// as children of the group entity.
+fn assign_sdf_group_children(
+    trigger: On<Add, SdfGroup>,
+    mut commands: Commands,
+    q_groups: Query<&SdfGroup>,
+) {
+    let group_entity = trigger.entity;
+    let Ok(group) = q_groups.get(group_entity) else {
+        return;
+    };
+
+    let mut child_entities = Vec::with_capacity(group.operands.len());
+
+    for (i, &(operand_entity, op)) in
+        group.operands.iter().enumerate()
+    {
+        commands.entity(operand_entity).insert((
+            SdfOperandOf(group_entity),
+            SdfBooleanOp(op),
+            SdfOrder(i),
+        ));
+        child_entities.push(operand_entity);
     }
-}
 
-impl IntoSdfNode for Entity {
-    fn into_desc(self) -> SdfOperandDesc {
-        SdfOperandDesc::Entity(self)
-    }
-}
-
-impl IntoSdfNode for (SdfGroup, SdfTransform) {
-    fn into_desc(self) -> SdfOperandDesc {
-        SdfOperandDesc::NestedGroup {
-            builder: self.0,
-            transform: self.1,
-        }
-    }
-}
-
-impl EntityCommand for SdfGroup {
-    fn apply(self, mut entity: EntityWorldMut) {
-        entity.insert(SdfOperands::default());
-        let group_entity = entity.id();
-
-        entity.world_scope(|world| {
-            for (i, (op, desc)) in
-                self.operands.into_iter().enumerate()
-            {
-                let operand_entity = match desc {
-                    SdfOperandDesc::Entity(e) => e,
-
-                    SdfOperandDesc::Inline { bundle, transform } => {
-                        let e = world.spawn(transform).id();
-                        bundle.insert_into(world, e);
-                        e
-                    }
-
-                    SdfOperandDesc::NestedGroup {
-                        builder,
-                        transform,
-                    } => {
-                        let e = world.spawn(transform).id();
-                        builder.apply(world.entity_mut(e));
-                        e
-                    }
-                };
-
-                world.entity_mut(operand_entity).insert((
-                    SdfOperandOf(group_entity),
-                    SdfBooleanOp(op),
-                    SdfOrder(i),
-                ));
-            }
-        });
-    }
+    commands.entity(group_entity).add_children(&child_entities);
 }
 
 pub trait SdfEntityCommandsExt {
+    /// Add this entity to a group as an operand.
     fn add_to_group(
         &mut self,
         group: Entity,
@@ -226,9 +166,14 @@ pub trait SdfEntityCommandsExt {
         order: usize,
     ) -> &mut Self;
 
+    /// Remove this entity from its current group.
     fn remove_from_group(&mut self) -> &mut Self;
 
+    /// Change the boolean operation without moving the entity.
     fn set_boolean_op(&mut self, op: BooleanOp) -> &mut Self;
+
+    /// Change the evaluation order within the group.
+    fn set_order(&mut self, order: usize) -> &mut Self;
 }
 
 impl SdfEntityCommandsExt for EntityCommands<'_> {
@@ -253,6 +198,11 @@ impl SdfEntityCommandsExt for EntityCommands<'_> {
 
     fn set_boolean_op(&mut self, op: BooleanOp) -> &mut Self {
         self.insert(SdfBooleanOp(op));
+        self
+    }
+
+    fn set_order(&mut self, order: usize) -> &mut Self {
+        self.insert(SdfOrder(order));
         self
     }
 }
