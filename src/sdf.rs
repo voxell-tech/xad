@@ -12,11 +12,12 @@ use bevy::render::render_resource::*;
 use bevy::render::renderer::{
     RenderContext, RenderDevice, RenderQueue,
 };
+use bevy::render::sync_world::MainEntity;
 use bevy::render::view::{
     ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms,
 };
 use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::sdf::boolean::{
     BooleanOp, SdfBooleanPlugin, SdfExtractedOperand,
@@ -254,6 +255,7 @@ fn update_input_buffers(
         &PrimitiveIndex,
         Option<&SdfExtractedOperand>,
     )>,
+    q_group_operands: Query<(&SdfExtractedOperand, &MainEntity)>,
     q_changed: Query<
         (),
         Or<(
@@ -273,35 +275,110 @@ fn update_input_buffers(
 
     buffers.input_buffer.clear();
 
-    let count = q_primitives.iter().len();
-    let mut group_id_map: HashMap<Entity, u32> =
-        HashMap::with_capacity(count);
-    let mut next_id: u32 = 1;
+    let operand_count = q_group_operands.iter().len();
+    let mut group_entities: HashSet<Entity> =
+        HashSet::with_capacity(operand_count);
+    let mut operand_of: HashMap<Entity, &SdfExtractedOperand> =
+        HashMap::with_capacity(operand_count);
 
-    let mut sorted_inputs: Vec<(u32, usize, SdfInput)> =
-        Vec::with_capacity(count);
+    for (operand, main_entity) in q_group_operands.iter() {
+        group_entities.insert(operand.group_entity);
+        operand_of.insert(main_entity.id(), operand);
+    }
+
+    // Build a map of group entity to its group children, excluding primitive operands.
+    // This will be used to perform a DFS and assign group ids.
+    let mut children_of: HashMap<Entity, Vec<(usize, Entity)>> =
+        HashMap::with_capacity(group_entities.len());
+    for (&child, operand) in &operand_of {
+        if group_entities.contains(&child) {
+            children_of
+                .entry(operand.group_entity)
+                .or_default()
+                .push((operand.order, child));
+        }
+    }
+    // Ensure siblings are visited in SdfOrder during DFS.
+    for v in children_of.values_mut() {
+        v.sort_unstable_by_key(|&(order, _)| order);
+    }
+
+    // Root groups that are not a child of any other group.
+    let mut roots: Vec<Entity> = group_entities
+        .iter()
+        .filter(|g| !operand_of.contains_key(g))
+        .copied()
+        .collect();
+    roots.sort_unstable();
+
+    // Assign group ids based on DFS order.
+    // This ensures that parent groups always have smaller group ids than their children.
+    let mut group_id_map: HashMap<Entity, u32> =
+        HashMap::with_capacity(group_entities.len());
+    let mut next_id: u32 = 1;
+    let mut dfs: Vec<Entity> = roots.into_iter().rev().collect();
+    while let Some(group) = dfs.pop() {
+        group_id_map.insert(group, next_id);
+        next_id += 1;
+        if let Some(children) = children_of.get(&group) {
+            for &(_, child) in children.iter().rev() {
+                dfs.push(child);
+            }
+        }
+    }
+
+    let mut sorted_inputs: Vec<(u32, usize, SdfInput)> = Vec::new();
 
     for (transform, ty, index, operand_opt) in q_primitives.iter() {
-        let (group_id, order, op) = if let Some(operand) = operand_opt
-        {
-            // Grouped primitive
-            let gid = *group_id_map
-                .entry(operand.group_entity)
-                .or_insert_with(|| {
-                    let id = next_id;
-                    next_id += 1;
-                    id
-                });
-            (gid, operand.order, operand.op as u32)
-        } else {
-            // Ungrouped primitive
-            (0, 0, BooleanOp::Union as u32)
-        };
+        let (group_id, order, op, parent_group_id, parent_op) =
+            if let Some(operand) = operand_opt {
+                let gid = group_id_map
+                    .get(&operand.group_entity)
+                    .copied()
+                    .unwrap_or(0);
+
+                let (parent_gid, par_op) =
+                    if let Some(group_operand) =
+                        operand_of.get(&operand.group_entity)
+                    {
+                        let pgid = group_id_map
+                            .get(&group_operand.group_entity)
+                            .copied()
+                            .unwrap_or(0);
+                        (pgid, group_operand.op as u32)
+                    } else {
+                        (0, BooleanOp::Union as u32)
+                    };
+
+                (
+                    gid,
+                    operand.order,
+                    operand.op as u32,
+                    parent_gid,
+                    par_op,
+                )
+            } else {
+                (
+                    0,
+                    0,
+                    BooleanOp::Union as u32,
+                    0,
+                    BooleanOp::Union as u32,
+                )
+            };
 
         sorted_inputs.push((
             group_id,
             order,
-            SdfInput::new(transform, ty, index, group_id, op),
+            SdfInput::new(
+                transform,
+                ty,
+                index,
+                group_id,
+                op,
+                parent_group_id,
+                parent_op,
+            ),
         ));
     }
 
@@ -510,6 +587,8 @@ struct SdfInput {
     pub primitive_index: u32,
     pub group_id: u32,
     pub boolean_op: u32,
+    pub parent_group_id: u32,
+    pub parent_op: u32,
 }
 
 impl SdfInput {
@@ -519,6 +598,8 @@ impl SdfInput {
         index: &PrimitiveIndex,
         group_id: u32,
         boolean_op: u32,
+        parent_group_id: u32,
+        parent_op: u32,
     ) -> Self {
         Self {
             local_from_world: Affine3::from(
@@ -532,6 +613,8 @@ impl SdfInput {
             primitive_index: index.0 + 1,
             group_id,
             boolean_op,
+            parent_group_id,
+            parent_op,
         }
     }
 }

@@ -13,6 +13,8 @@ struct SdfInput {
     primitive_index: u32,
     group_id: u32,
     boolean_op: u32,
+    parent_group_id: u32,
+    parent_op: u32,
 };
 
 struct SdfSphere {
@@ -50,6 +52,9 @@ const OP_UNION: u32 = 0u;
 const OP_DIFFERENCE: u32 = 1u;
 const OP_INTERSECTION: u32 = 2u;
 const OP_EXCLUSION: u32 = 3u;
+
+// Maximum nesting depth of groups within groups.
+const MAX_STACK_DEPTH: u32 = 8u;
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
@@ -99,72 +104,120 @@ fn apply_op(op: u32, acc: f32, d: f32) -> f32 {
     }
 }
 
+// Evaluate the raw SDF distance for a single input at world-space `point`.
+fn eval_primitive(input: SdfInput, point: vec3f) -> f32 {
+    let sample_point = ((vec4f(point, 1.0) * input.local_from_world).xyz) / input.scale;
+    var d = sdf_camera.far_plane;
+    switch input.primitive_type {
+        default { }
+        case SPHERE {
+            d = sd_sphere(sample_point, spheres[input.primitive_index].radius);
+        }
+        case CUBOID {
+            d = sd_cuboid(sample_point, cuboids[input.primitive_index].extents);
+        }
+        case ROUND_CUBOID {
+            let rc = round_cuboids[input.primitive_index];
+            d = sd_round_cuboid(sample_point, rc.extents, rc.radius);
+        }
+        case CAPSULE {
+            let cap = capsules[input.primitive_index];
+            d = sd_capsule(sample_point, cap.point_a, cap.point_b, cap.radius);
+        }
+        case TORUS {
+            let tor = toruses[input.primitive_index];
+            d = sd_torus(sample_point, vec2f(tor.ring_radius, tor.tube_radius));
+        }
+    }
+    return d * input.scale;
+}
+
 /// Scene composition.
 fn composition(point: vec3f) -> f32 {
     let len = arrayLength(&inputs);
+
+    // Stack entries, accumulated distance per active group level.
+    var stack_acc:        array<f32, 8>;
+    var stack_group_id:   array<u32, 8>;
+    var stack_parent_id:  array<u32, 8>;
+    var stack_parent_op:  array<u32, 8>;
+    var stack_top: i32 = -1; // -1 = empty
+
     var dist = sdf_camera.far_plane;
 
     // TODO: Implement acceleration structure (BVH?) to prevent looping over
     // the entire transform buffer.
     // TODO: Support different SDF primitives.
-    var acc          = sdf_camera.far_plane;
-    var active_group = 0u;
-
     for (var i = 0u; i < len; i++) {
         let input = inputs[i];
-        let sample_point = ((vec4f(point, 1.0) * input.local_from_world).xyz) / input.scale;
-
-        var sdf_dist = sdf_camera.far_plane;
-        switch input.primitive_type {
-            default { }
-            case SPHERE {
-                let radius = spheres[input.primitive_index].radius;
-                sdf_dist = sd_sphere(sample_point, radius);
-            }
-            case CUBOID {
-                let extents = cuboids[input.primitive_index].extents;
-                sdf_dist = sd_cuboid(sample_point, extents);
-            }
-            case ROUND_CUBOID {
-                let round_cuboid = round_cuboids[input.primitive_index];
-                sdf_dist = sd_round_cuboid(sample_point, round_cuboid.extents, round_cuboid.radius);
-            }
-            case CAPSULE {
-                let capsule = capsules[input.primitive_index];
-                sdf_dist = sd_capsule(sample_point, capsule.point_a, capsule.point_b, capsule.radius);
-            }
-            case TORUS {
-                let torus = toruses[input.primitive_index];
-                let t = vec2f(torus.ring_radius, torus.tube_radius);
-                sdf_dist = sd_torus(sample_point, t);
-            }
-        };
-
-        let d = sdf_dist * input.scale;
+        let d = eval_primitive(input, point);
 
         if input.group_id == 0u {
-            // Ungrouped, commit any open group, then union into scene.
-            if active_group != 0u {
-                dist = min(dist, acc);
-                active_group = 0u;
-            }
+            // Root-level primitive, union directly into the scene.
             dist = min(dist, d);
-        } else if input.group_id != active_group {
-            // New group, commit previous group if open, reset accumulator.
-            if active_group != 0u {
-                dist = min(dist, acc);
-            }
-            acc = d;
-            active_group = input.group_id;
         } else {
-            // Same group, apply the declared boolean operation.
-            acc = apply_op(input.boolean_op, acc, d);
+            // Check if this group is already on the stack.
+            var found = false;
+            for (var s = stack_top; s >= 0; s--) {
+                if stack_group_id[s] == input.group_id {
+                    // Same group, apply boolean op into its accumulator.
+                    stack_acc[s] = apply_op(input.boolean_op, stack_acc[s], d);
+                    found = true;
+                    break;
+                }
+            }
+
+            if !found {
+                // New group, commit any finished sibling groups before pushing.
+                while stack_top >= 0 && stack_group_id[stack_top] != input.parent_group_id {
+                    let top_acc = stack_acc[stack_top];
+                    let top_parent = stack_parent_id[stack_top];
+                    let top_op = stack_parent_op[stack_top];
+                    stack_top -= 1;
+
+                    if top_parent == 0u {
+                        // Commits into the scene.
+                        dist = apply_op(top_op, dist, top_acc);
+                    } else {
+                        // Commits into its parent group on the stack.
+                        for (var s = stack_top; s >= 0; s--) {
+                            if stack_group_id[s] == top_parent {
+                                stack_acc[s] = apply_op(top_op, stack_acc[s], top_acc);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Push the new group.
+                if stack_top < i32(MAX_STACK_DEPTH) - 1 {
+                    stack_top += 1;
+                    stack_group_id[stack_top]  = input.group_id;
+                    stack_acc[stack_top]        = d;
+                    stack_parent_id[stack_top]  = input.parent_group_id;
+                    stack_parent_op[stack_top]  = input.parent_op;
+                }
+            }
         }
     }
 
-    // Commit the last open group.
-    if active_group != 0u {
-        dist = min(dist, acc);
+    // Drain the stack by commit all remaining groups bottom-up.
+    while stack_top >= 0 {
+        let top_acc    = stack_acc[stack_top];
+        let top_parent = stack_parent_id[stack_top];
+        let top_op     = stack_parent_op[stack_top];
+        stack_top -= 1;
+
+        if top_parent == 0u {
+            dist = apply_op(top_op, dist, top_acc);
+        } else {
+            for (var s = stack_top; s >= 0; s--) {
+                if stack_group_id[s] == top_parent {
+                    stack_acc[s] = apply_op(top_op, stack_acc[s], top_acc);
+                    break;
+                }
+            }
+        }
     }
 
     return dist;
