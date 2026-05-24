@@ -27,7 +27,7 @@ pub enum BooleanOp {
     Exclusion = 3,
 }
 
-/// This entity is a member of an SDF group (the group entity carries [`SdfOperands`]).
+/// This entity is a member of an SDF group which the group entity carries [`SdfOperands`]).
 #[derive(Component)]
 #[relationship(relationship_target = SdfOperands)]
 pub struct SdfOperandOf(pub Entity);

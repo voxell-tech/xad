@@ -110,6 +110,97 @@ fn test_setup(
         MeshMaterial3d(materials.add(StandardMaterial::default())),
         Transform::default(),
     ));
+
+    // Nested boolean test (2 levels): big_sphere - (medium_sphere - small_sphere)
+    let nested_big_sphere = commands
+        .spawn((SdfSphere { radius: 0.6 }, SdfTransform::default()))
+        .id();
+
+    let nested_medium_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.45 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.25, 0.0, 0.0)),
+        ))
+        .id();
+
+    let nested_small_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.25 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.25, 0.0, 0.0)),
+        ))
+        .id();
+
+    let nested_inner_group = commands
+        .spawn((
+            SdfGroup::new(nested_medium_sphere)
+                .difference(nested_small_sphere),
+            SdfTransform::default(),
+        ))
+        .id();
+
+    commands.spawn((
+        SdfGroup::new(nested_big_sphere)
+            .difference(nested_inner_group),
+        SdfTransform::default()
+            .with_translation(Vec3::new(0.0, 1.5, 0.0)),
+    ));
+
+    // Nested boolean test (3 levels): big_sphere - (small_sphere - (tiny_sphere_a - tiny_sphere_b))
+    let nested3_big_sphere = commands
+        .spawn((SdfSphere { radius: 0.6 }, SdfTransform::default()))
+        .id();
+
+    let nested3_small_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.4 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.4, 0.0, 0.0)),
+        ))
+        .id();
+
+    let nested3_tiny_sphere_a = commands
+        .spawn((
+            SdfSphere { radius: 0.25 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.7, 0.0, 0.0)),
+        ))
+        .id();
+
+    let nested3_tiny_sphere_b = commands
+        .spawn((
+            SdfSphere { radius: 0.12 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.7, 0.0, 0.0)),
+        ))
+        .id();
+
+    // Level 3: nested3_tiny_sphere_a - nested3_tiny_sphere_b
+    let nested3_level3_group = commands
+        .spawn((
+            SdfGroup::new(nested3_tiny_sphere_a)
+                .difference(nested3_tiny_sphere_b),
+            SdfTransform::default(),
+        ))
+        .id();
+
+    // Level 2: nested3_small_sphere - nested3_level3_group
+    let nested3_level2_group = commands
+        .spawn((
+            SdfGroup::new(nested3_small_sphere)
+                .difference(nested3_level3_group),
+            SdfTransform::default(),
+        ))
+        .id();
+
+    // Level 1: nested3_big_sphere - nested3_level2_group
+    commands.spawn((
+        SdfGroup::new(nested3_big_sphere)
+            .difference(nested3_level2_group),
+        SdfTransform::default()
+            .with_translation(Vec3::new(0.0, -1.5, 0.0)),
+    ));
 }
 
 fn rotate_sdf(
