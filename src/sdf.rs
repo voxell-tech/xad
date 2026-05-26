@@ -262,24 +262,24 @@ fn update_input_buffers(
             Changed<SdfGlobalTransform>,
             Changed<PrimitiveIndex>,
             Added<PrimitiveIndex>,
+            Changed<SdfExtractedOperand>,
         )>,
     >,
+    removed_primitives: RemovedComponents<PrimitiveIndex>,
     mut buffers: ResMut<SdfBuffers>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
     // TODO: Optimize this to only update changed/added/removed transform!
-    if q_changed.is_empty() {
+    if q_changed.is_empty() && removed_primitives.is_empty() {
         return;
     }
 
     buffers.input_buffer.clear();
 
-    let operand_count = q_group_operands.iter().len();
-    let mut group_entities: HashSet<Entity> =
-        HashSet::with_capacity(operand_count);
+    let mut group_entities: HashSet<Entity> = HashSet::new();
     let mut operand_of: HashMap<Entity, &SdfExtractedOperand> =
-        HashMap::with_capacity(operand_count);
+        HashMap::new();
 
     for (operand, main_entity) in q_group_operands.iter() {
         group_entities.insert(operand.group_entity);
@@ -401,7 +401,7 @@ fn update_primitive_buffers<
 >(
     InMut((ty, get_buffer)): InMut<(PrimitiveType, F)>,
     mut commands: Commands,
-    q_primitives: Query<(&T, Entity)>,
+    q_primitives: Query<(&T, Entity, Option<&PrimitiveIndex>)>,
     q_changed: Query<(), Or<(Changed<T>, Added<T>)>>,
     removed: RemovedComponents<T>,
     mut buffers: ResMut<SdfBuffers>,
@@ -421,11 +421,18 @@ fn update_primitive_buffers<
     // next time. (This is needed right now since a `BufferVec` won't be created
     // if the data is empty!)
     buffer.push(T::default());
-    for (i, (primitive, entity)) in q_primitives.iter().enumerate() {
+    for (i, (primitive, entity, existing_index)) in
+        q_primitives.iter().enumerate()
+    {
         buffer.push(primitive.clone());
-        commands
-            .entity(entity)
-            .insert((*ty, PrimitiveIndex(i as u32)));
+        // Only insert PrimitiveIndex when it actually changed.
+        if existing_index.map(|idx: &PrimitiveIndex| idx.0)
+            != Some(i as u32)
+        {
+            commands
+                .entity(entity)
+                .insert((*ty, PrimitiveIndex(i as u32)));
+        }
     }
 
     buffer.write_buffer(&render_device, &render_queue);
