@@ -135,12 +135,11 @@ fn eval_primitive(input: SdfInput, point: vec3f) -> f32 {
 /// Scene composition.
 fn composition(point: vec3f) -> f32 {
     let len = arrayLength(&inputs);
-
     // Stack entries, accumulated distance per active group level.
-    var stack_acc:        array<f32, 8>;
-    var stack_group_id:   array<u32, 8>;
-    var stack_parent_id:  array<u32, 8>;
-    var stack_parent_op:  array<u32, 8>;
+    var stack_acc: array<f32, 8>;
+    var stack_parent_id: array<u32, 8>;
+    var stack_parent_op: array<u32, 8>;
+    var cur_group_id: u32 = 0u;
     var stack_top: i32 = -1; // -1 = empty
 
     var dist = sdf_camera.far_plane;
@@ -155,68 +154,31 @@ fn composition(point: vec3f) -> f32 {
         if input.group_id == 0u {
             // Root-level primitive, union directly into the scene.
             dist = min(dist, d);
+        } else if input.group_id == cur_group_id {
+            stack_acc[stack_top] = apply_op(input.boolean_op, stack_acc[stack_top], d);
         } else {
-            // Check if this group is already on the stack.
-            var found = false;
-            for (var s = stack_top; s >= 0; s--) {
-                if stack_group_id[s] == input.group_id {
-                    // Same group, apply boolean op into its accumulator.
-                    stack_acc[s] = apply_op(input.boolean_op, stack_acc[s], d);
-                    found = true;
-                    break;
-                }
-            }
-
-            if !found {
-                // New group, commit any finished sibling groups before pushing.
-                while stack_top >= 0 && stack_group_id[stack_top] != input.parent_group_id {
-                    let top_acc = stack_acc[stack_top];
-                    let top_parent = stack_parent_id[stack_top];
-                    let top_op = stack_parent_op[stack_top];
-                    stack_top -= 1;
-
-                    if top_parent == 0u {
-                        // Commits into the scene.
-                        dist = apply_op(top_op, dist, top_acc);
-                    } else {
-                        // Commits into its parent group on the stack.
-                        for (var s = stack_top; s >= 0; s--) {
-                            if stack_group_id[s] == top_parent {
-                                stack_acc[s] = apply_op(top_op, stack_acc[s], top_acc);
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Push the new group.
-                if stack_top < i32(MAX_STACK_DEPTH) - 1 {
-                    stack_top += 1;
-                    stack_group_id[stack_top]  = input.group_id;
-                    stack_acc[stack_top]        = d;
-                    stack_parent_id[stack_top]  = input.parent_group_id;
-                    stack_parent_op[stack_top]  = input.parent_op;
-                }
+            // New group
+            if stack_top < i32(MAX_STACK_DEPTH) - 1 {
+                stack_top += 1;
+                stack_acc[stack_top] = d;
+                stack_parent_id[stack_top] = input.parent_group_id;
+                stack_parent_op[stack_top] = input.parent_op;
+                cur_group_id = input.group_id;
             }
         }
     }
 
-    // Drain the stack by commit all remaining groups bottom-up.
+    // Drain remaining groups bottom-up.
     while stack_top >= 0 {
-        let top_acc    = stack_acc[stack_top];
+        let top_acc = stack_acc[stack_top];
         let top_parent = stack_parent_id[stack_top];
-        let top_op     = stack_parent_op[stack_top];
+        let top_op = stack_parent_op[stack_top];
         stack_top -= 1;
 
         if top_parent == 0u {
             dist = apply_op(top_op, dist, top_acc);
         } else {
-            for (var s = stack_top; s >= 0; s--) {
-                if stack_group_id[s] == top_parent {
-                    stack_acc[s] = apply_op(top_op, stack_acc[s], top_acc);
-                    break;
-                }
-            }
+            stack_acc[stack_top] = apply_op(top_op, stack_acc[stack_top], top_acc);
         }
     }
 
