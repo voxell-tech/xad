@@ -201,6 +201,41 @@ fn test_setup(
         SdfTransform::default()
             .with_translation(Vec3::new(0.0, -1.5, 0.0)),
     ));
+
+    // Sibling test: (big_sphere - left_sphere) n (big_sphere - right_sphere)
+    let left_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.5 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(-0.5, 0.0, 0.0)),
+        ))
+        .id();
+    let group_left = commands
+        .spawn((SdfGroup::new(left_sphere), SdfTransform::default()))
+        .id();
+
+    let right_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.5 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.5, 0.0, 0.0)),
+        ))
+        .id();
+    let group_right = commands
+        .spawn((SdfGroup::new(right_sphere), SdfTransform::default()))
+        .id();
+
+    let sphere_a = commands
+        .spawn((SdfSphere { radius: 0.5 }, SdfTransform::default()))
+        .id();
+
+    commands.spawn((
+        SdfGroup::new(sphere_a)
+            .difference(group_left)
+            .difference(group_right),
+        SdfTransform::default()
+            .with_translation(Vec3::new(-2.0, 1.5, 0.0)),
+    ));
 }
 
 fn rotate_sdf(
