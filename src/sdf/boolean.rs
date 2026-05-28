@@ -129,8 +129,8 @@ impl SdfGroup {
 }
 
 /// Fires when [`SdfGroup`] is added to an entity.
-/// Inserts relationship components on each operand and registers them
-/// as children of the group entity.
+/// Inserts [`SdfOperandOf`], [`SdfBooleanOp`], and [`SdfOrder`] on each
+/// operand so the `SdfOperandOf`/`SdfOperands` relationship is established.
 fn assign_sdf_group_children(
     trigger: On<Add, SdfGroup>,
     mut commands: Commands,
@@ -141,8 +141,6 @@ fn assign_sdf_group_children(
         return;
     };
 
-    let mut child_entities = Vec::with_capacity(group.operands.len());
-
     for (i, &(operand_entity, op)) in
         group.operands.iter().enumerate()
     {
@@ -151,10 +149,7 @@ fn assign_sdf_group_children(
             SdfBooleanOp(op),
             SdfOrder(i),
         ));
-        child_entities.push(operand_entity);
     }
-
-    commands.entity(group_entity).add_children(&child_entities);
 }
 
 pub trait SdfEntityCommandsExt {
