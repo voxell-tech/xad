@@ -299,12 +299,16 @@ fn update_input_buffers(
         )>,
     >,
     removed_primitives: RemovedComponents<PrimitiveIndex>,
+    removed_operands: RemovedComponents<SdfExtractedOperand>,
     mut buffers: ResMut<SdfBuffers>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
 ) {
     // TODO: Optimize this to only update changed/added/removed transform!
-    if q_changed.is_empty() && removed_primitives.is_empty() {
+    if q_changed.is_empty()
+        && removed_primitives.is_empty()
+        && removed_operands.is_empty()
+    {
         return;
     }
 

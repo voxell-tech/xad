@@ -55,7 +55,8 @@ pub struct SdfBooleanOp(pub BooleanOp);
 )]
 pub struct SdfOrder(pub usize);
 
-/// Render-world copy produced by [`SdfOperandOf`]'s [`ExtractComponent`] impl.
+/// Render-world copy of [`SdfOperandOf`], [`SdfBooleanOp`], and [`SdfOrder`],
+/// produced during extraction by `extract_sdf_operands` in `sdf.rs`.
 #[derive(Component, Clone)]
 pub struct SdfExtractedOperand {
     pub group_entity: Entity,
