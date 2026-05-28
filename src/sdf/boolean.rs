@@ -1,7 +1,4 @@
 use bevy::prelude::*;
-use bevy::render::extract_component::{
-    ExtractComponent, ExtractComponentPlugin,
-};
 
 pub struct SdfBooleanPlugin;
 
@@ -11,9 +8,6 @@ impl Plugin for SdfBooleanPlugin {
             .register_type::<SdfBooleanOp>()
             .register_type::<SdfOrder>()
             .register_type::<SdfGroup>()
-            .add_plugins(
-                ExtractComponentPlugin::<SdfOperandOf>::default(),
-            )
             .add_observer(assign_sdf_group_children);
     }
 }
@@ -31,26 +25,6 @@ pub enum BooleanOp {
 #[derive(Component)]
 #[relationship(relationship_target = SdfOperands)]
 pub struct SdfOperandOf(pub Entity);
-
-impl ExtractComponent for SdfOperandOf {
-    type QueryData = (
-        &'static SdfOperandOf,
-        &'static SdfBooleanOp,
-        &'static SdfOrder,
-    );
-    type QueryFilter = ();
-    type Out = SdfExtractedOperand;
-
-    fn extract_component(
-        (operand_of, bool_op, order): <Self::QueryData as bevy::ecs::query::QueryData>::Item<'_, '_>,
-    ) -> Option<Self::Out> {
-        Some(SdfExtractedOperand {
-            group_entity: operand_of.0,
-            op: bool_op.0,
-            order: order.0,
-        })
-    }
-}
 
 /// The group entity owns references to all its operand children.
 #[derive(Component, Default)]

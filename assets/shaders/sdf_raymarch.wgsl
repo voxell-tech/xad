@@ -137,9 +137,9 @@ fn composition(point: vec3f) -> f32 {
     let len = arrayLength(&inputs);
     // Stack entries, accumulated distance per active group level.
     var stack_acc: array<f32, 8>;
+    var stack_group_id: array<u32, 8>;
     var stack_parent_id: array<u32, 8>;
     var stack_parent_op: array<u32, 8>;
-    var cur_group_id: u32 = 0u;
     var stack_top: i32 = -1; // -1 = empty
 
     var dist = sdf_camera.far_plane;
@@ -154,16 +154,37 @@ fn composition(point: vec3f) -> f32 {
         if input.group_id == 0u {
             // Root-level primitive, union directly into the scene.
             dist = min(dist, d);
-        } else if input.group_id == cur_group_id {
+        } else if stack_top >= 0 && stack_group_id[stack_top] == input.group_id {
             stack_acc[stack_top] = apply_op(input.boolean_op, stack_acc[stack_top], d);
         } else {
             // New group
+            loop {
+                if stack_top < 0 {
+                    break;
+                }
+                if stack_group_id[stack_top] == input.parent_group_id {
+                    break;
+                }
+                let top_acc = stack_acc[stack_top];
+                let top_parent = stack_parent_id[stack_top];
+                let top_op = stack_parent_op[stack_top];
+                stack_top -= 1;
+
+                if top_parent == 0u || stack_top < 0 {
+                    dist = apply_op(top_op, dist, top_acc);
+                } else {
+                    stack_acc[stack_top] = apply_op(top_op, stack_acc[stack_top], top_acc);
+                }
+            }
+
             if stack_top < i32(MAX_STACK_DEPTH) - 1 {
                 stack_top += 1;
-                stack_acc[stack_top] = d;
+                stack_acc[stack_top]       = d;
+                stack_group_id[stack_top]  = input.group_id;
                 stack_parent_id[stack_top] = input.parent_group_id;
                 stack_parent_op[stack_top] = input.parent_op;
-                cur_group_id = input.group_id;
+            } else {
+                dist = min(dist, d);
             }
         }
     }
@@ -175,7 +196,7 @@ fn composition(point: vec3f) -> f32 {
         let top_op = stack_parent_op[stack_top];
         stack_top -= 1;
 
-        if top_parent == 0u {
+        if top_parent == 0u || stack_top < 0 {
             dist = apply_op(top_op, dist, top_acc);
         } else {
             stack_acc[stack_top] = apply_op(top_op, stack_acc[stack_top], top_acc);

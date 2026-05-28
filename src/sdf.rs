@@ -12,15 +12,19 @@ use bevy::render::render_resource::*;
 use bevy::render::renderer::{
     RenderContext, RenderDevice, RenderQueue,
 };
-use bevy::render::sync_world::MainEntity;
+use bevy::render::sync_world::{MainEntity, RenderEntity};
 use bevy::render::view::{
     ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms,
 };
-use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
+use bevy::render::{
+    Extract, ExtractSchedule, Render, RenderApp, RenderStartup,
+    RenderSystems,
+};
 use std::collections::{HashMap, HashSet};
 
 use crate::sdf::boolean::{
-    BooleanOp, SdfBooleanPlugin, SdfExtractedOperand,
+    BooleanOp, SdfBooleanOp, SdfBooleanPlugin, SdfExtractedOperand,
+    SdfOperandOf, SdfOrder,
 };
 use crate::sdf::primitves::{
     SdfCapsule, SdfCuboid, SdfPrimitivePlugin, SdfRoundCuboid,
@@ -51,6 +55,7 @@ impl Plugin for SdfPlugin {
         };
 
         render_app
+            .add_systems(ExtractSchedule, extract_sdf_operands)
             .add_systems(
                 RenderStartup,
                 (init_sdf_pipeline, init_sdf_buffers),
@@ -248,6 +253,34 @@ struct SdfBuffers {
     torus_buffer: BufferVec<SdfTorus>,
 }
 
+/// Extracts [`SdfExtractedOperand`] for all operand entities into the render world.
+///
+/// Using [`Changed`] on the main-world components gives correct first-insertion detection
+/// without spuriously triggering every frame.
+fn extract_sdf_operands(
+    q: Extract<
+        Query<
+            (&RenderEntity, &SdfOperandOf, &SdfBooleanOp, &SdfOrder),
+            Or<(
+                Changed<SdfOperandOf>,
+                Changed<SdfBooleanOp>,
+                Changed<SdfOrder>,
+            )>,
+        >,
+    >,
+    mut commands: Commands,
+) {
+    for (render_entity, operand_of, bool_op, order) in q.iter() {
+        commands.entity(render_entity.id()).insert(
+            SdfExtractedOperand {
+                group_entity: operand_of.0,
+                op: bool_op.0,
+                order: order.0,
+            },
+        );
+    }
+}
+
 fn update_input_buffers(
     q_primitives: Query<(
         &SdfGlobalTransform,
@@ -411,7 +444,9 @@ fn update_primitive_buffers<
     // TODO: Optimize this to only update changed/added/removed primitive!
     let buffer = get_buffer(&mut buffers);
 
-    if q_changed.is_empty() && removed.is_empty() && buffer.len() > 1
+    if q_changed.is_empty()
+        && removed.is_empty()
+        && !buffer.is_empty()
     {
         return;
     }
