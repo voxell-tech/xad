@@ -236,6 +236,52 @@ fn test_setup(
         SdfTransform::default()
             .with_translation(Vec3::new(-2.0, 1.5, 0.0)),
     ));
+
+    // Primitive after subgroup ordering test
+    let big_sphere = commands
+        .spawn((SdfSphere { radius: 0.55 }, SdfTransform::default()))
+        .id();
+
+    // inner_group: med_sphere − small_sphere
+    let med_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.35 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.0, 0.0, 0.0)),
+        ))
+        .id();
+    let small_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.2 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.15, 0.0, 0.0)),
+        ))
+        .id();
+    let inner_group = commands
+        .spawn((
+            SdfGroup::new(med_sphere).difference(small_sphere),
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.25, 0.0, 0.0)),
+        ))
+        .id();
+
+    // cap_sphere: (order=2, AFTER subgroup)
+    let cap_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.45 },
+            SdfTransform::default()
+                .with_translation(Vec3::new(0.0, 0.35, 0.0)),
+        ))
+        .id();
+
+    // outer_group: big − inner_group − cap
+    commands.spawn((
+        SdfGroup::new(big_sphere)
+            .difference(inner_group)
+            .difference(cap_sphere),
+        SdfTransform::default()
+            .with_translation(Vec3::new(2.0, 1.5, 0.0)),
+    ));
 }
 
 fn rotate_sdf(
