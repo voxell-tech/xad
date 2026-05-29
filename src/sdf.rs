@@ -139,6 +139,11 @@ impl ViewNode for SdfNode {
         let pipeline_cache = world.resource::<PipelineCache>();
         let sdf_pipeline = world.resource::<SdfPipeline>();
         let sdf_buffers = world.resource::<SdfBuffers>();
+
+        if sdf_buffers.input_count == 0 {
+            return Ok(());
+        }
+
         let view_uniforms = world.resource::<ViewUniforms>();
         let sdf_cameras =
             world.resource::<ComponentUniforms<SdfCamera>>();
@@ -251,6 +256,7 @@ struct SdfBuffers {
     round_cuboid_buffer: BufferVec<SdfRoundCuboid>,
     capsule_buffer: BufferVec<SdfCapsule>,
     torus_buffer: BufferVec<SdfTorus>,
+    input_count: u32,
 }
 
 /// Extracts [`SdfExtractedOperand`] for all operand entities into the render world.
@@ -425,11 +431,14 @@ fn update_input_buffers(
         buffers.input_buffer.push(input);
     }
 
-    if !buffers.input_buffer.is_empty() {
-        buffers
-            .input_buffer
-            .write_buffer(&render_device, &render_queue);
+    buffers.input_count = buffers.input_buffer.len() as u32;
+
+    if buffers.input_buffer.is_empty() {
+        buffers.input_buffer.push(SdfInput::default());
     }
+    buffers
+        .input_buffer
+        .write_buffer(&render_device, &render_queue);
 }
 
 fn update_primitive_buffers<
@@ -508,6 +517,7 @@ fn init_sdf_buffers(mut commands: Commands) {
         round_cuboid_buffer,
         capsule_buffer,
         torus_buffer,
+        input_count: 0,
     });
 }
 
