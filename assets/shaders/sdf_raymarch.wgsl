@@ -11,10 +11,12 @@ struct SdfInput {
     scale: f32,
     primitive_type: u32,
     primitive_index: u32,
-    group_id: u32,
+    // Op this record applies to its parent's accumulator.
     boolean_op: u32,
-    parent_group_id: u32,
-    parent_op: u32,
+    // Buffer index of the parent group header. 0xFFFFFFFF = scene root.
+    parent_index: u32,
+    // 1 = group header record; 0 = leaf primitive record.
+    has_children: u32,
 };
 
 struct SdfSphere {
@@ -106,7 +108,7 @@ fn apply_op(op: u32, acc: f32, d: f32) -> f32 {
 
 // Evaluate the raw SDF distance for a single input at world-space `point`.
 fn eval_primitive(input: SdfInput, point: vec3f) -> f32 {
-    let sample_point = ((vec4f(point, 1.0) * input.local_from_world).xyz) / input.scale;
+    let sample_point = (vec4f(point, 1.0) * input.local_from_world).xyz;
     var d = sdf_camera.far_plane;
     switch input.primitive_type {
         default { }
@@ -135,75 +137,61 @@ fn eval_primitive(input: SdfInput, point: vec3f) -> f32 {
 /// Scene composition.
 fn composition(point: vec3f) -> f32 {
     let len = arrayLength(&inputs);
-    // Stack entries, accumulated distance per active group level.
-    var stack_acc: array<f32, 8>;
-    var stack_group_id: array<u32, 8>;
-    var stack_parent_id: array<u32, 8>;
-    var stack_parent_op: array<u32, 8>;
-    var stack_top: i32 = -1; // -1 = empty
 
-    var dist = sdf_camera.far_plane;
+    // Per-stack-entry state. 
+    // Buffer position of the group header that opened this frame.
+    var stack_dfs_index: array<u32, MAX_STACK_DEPTH>;
+    // Value of current_dist before this group was pushed.
+    var stack_saved_dist: array<f32, MAX_STACK_DEPTH>;
+    // Op to apply when folding this group into its parent.
+    var stack_boolean_op: array<u32, MAX_STACK_DEPTH>;
+    var stack_top: i32 = -1;
 
-    // TODO: Implement acceleration structure (BVH?) to prevent looping over
-    // the entire transform buffer.
-    // TODO: Support different SDF primitives.
+    // Accumulates the running SDF result for the active scope.
+    // At the end it holds the final scene distance.
+    var current_dist = sdf_camera.far_plane;
+
     for (var i = 0u; i < len; i++) {
         let input = inputs[i];
-        let d = eval_primitive(input, point);
 
-        if input.group_id == 0u {
-            // Root-level primitive, union directly into the scene.
-            dist = min(dist, d);
-        } else if stack_top >= 0 && stack_group_id[stack_top] == input.group_id {
-            stack_acc[stack_top] = apply_op(input.boolean_op, stack_acc[stack_top], d);
-        } else {
-            // New group
-            loop {
-                if stack_top < 0 {
-                    break;
-                }
-                if stack_group_id[stack_top] == input.parent_group_id {
-                    break;
-                }
-                let top_acc = stack_acc[stack_top];
-                let top_parent = stack_parent_id[stack_top];
-                let top_op = stack_parent_op[stack_top];
-                stack_top -= 1;
+        // Drain closed groups before processing this record.
+        // A group is closed when the incoming record belongs to a shallower ancestor.
+        loop {
+            if stack_top < 0 { break; }
+            if stack_dfs_index[stack_top] == input.parent_index { break; }
+            let saved = stack_saved_dist[stack_top];
+            let op = stack_boolean_op[stack_top];
+            stack_top -= 1;
+            current_dist = apply_op(op, saved, current_dist);
+        }
 
-                if top_parent == 0u || stack_top < 0 {
-                    dist = apply_op(top_op, dist, top_acc);
-                } else {
-                    stack_acc[stack_top] = apply_op(top_op, stack_acc[stack_top], top_acc);
-                }
-            }
-
+        if input.has_children == 1u {
+            // Group header, open a new scope.
+            // Save the parent scope's running distance, reset for this group.
             if stack_top < i32(MAX_STACK_DEPTH) - 1 {
                 stack_top += 1;
-                stack_acc[stack_top]       = d;
-                stack_group_id[stack_top]  = input.group_id;
-                stack_parent_id[stack_top] = input.parent_group_id;
-                stack_parent_op[stack_top] = input.parent_op;
-            } else {
-                dist = min(dist, d);
+                stack_dfs_index[stack_top]  = i;
+                stack_saved_dist[stack_top] = current_dist;
+                stack_boolean_op[stack_top] = input.boolean_op;
+                current_dist = sdf_camera.far_plane;
             }
-        }
-    }
-
-    // Drain remaining groups bottom-up.
-    while stack_top >= 0 {
-        let top_acc = stack_acc[stack_top];
-        let top_parent = stack_parent_id[stack_top];
-        let top_op = stack_parent_op[stack_top];
-        stack_top -= 1;
-
-        if top_parent == 0u || stack_top < 0 {
-            dist = apply_op(top_op, dist, top_acc);
+            // If the stack is full, skip this group.
         } else {
-            stack_acc[stack_top] = apply_op(top_op, stack_acc[stack_top], top_acc);
+            // Leaf primitive, evaluate and fold into current scope.
+            let d = eval_primitive(input, point);
+            current_dist = apply_op(input.boolean_op, current_dist, d);
         }
     }
 
-    return dist;
+    // Drain any remaining open groups.
+    while stack_top >= 0 {
+        let saved = stack_saved_dist[stack_top];
+        let op    = stack_boolean_op[stack_top];
+        stack_top -= 1;
+        current_dist = apply_op(op, saved, current_dist);
+    }
+
+    return current_dist;
 }
 
 /// Calculate surface normal via gradient.

@@ -287,6 +287,81 @@ fn extract_sdf_operands(
     }
 }
 
+/// Emit one group into the packed buffer in preorder.
+///
+/// By emitting the group header before recursing into children, the header's
+/// buffer position becomes its stable, unique identity.  Every child record
+/// carries `parent_index` = that position, so the shader can detect group
+/// boundaries purely from `parent_index` mismatches.
+fn emit_group(
+    group: Entity,
+    parent_header_index: u32,
+    boolean_op: u32,
+    primitives_of: &HashMap<Entity, Vec<(usize, SdfInput)>>,
+    children_of: &HashMap<Entity, Vec<(usize, Entity, u32)>>,
+    buffer: &mut BufferVec<SdfInput>,
+) -> bool {
+    // Save position so it can roll back if this group turns out to be empty.
+    let start = buffer.len();
+    let header_index = start as u32;
+
+    // Emit group header, rolled back below if no children follow.
+    buffer.push(SdfInput {
+        has_children: 1,
+        boolean_op,
+        parent_index: parent_header_index,
+        ..SdfInput::default()
+    });
+
+    // Build and sort slots by SdfOrder
+    // Interleave direct-primitive slots and subgroup slots respecting user order.
+    let prim_count = primitives_of.get(&group).map_or(0, |v| v.len());
+    let child_count = children_of.get(&group).map_or(0, |v| v.len());
+    let mut slots: Vec<(usize, bool, usize)> =
+        Vec::with_capacity(prim_count + child_count);
+
+    if let Some(prims) = primitives_of.get(&group) {
+        for (i, &(order, _)) in prims.iter().enumerate() {
+            slots.push((order, false, i));
+        }
+    }
+    if let Some(children) = children_of.get(&group) {
+        for (i, &(order, _, _)) in children.iter().enumerate() {
+            slots.push((order, true, i));
+        }
+    }
+    slots.sort_unstable_by_key(|&(order, _, _)| order);
+
+    // Emit children in order
+    for (_, is_sub, idx) in slots {
+        if is_sub {
+            let (_, child, child_op) = children_of[&group][idx];
+            // Recursive call returns false and self-truncates if child is empty.
+            emit_group(
+                child,
+                header_index, // child's parent is this group's header
+                child_op,
+                primitives_of,
+                children_of,
+                buffer,
+            );
+        } else {
+            // Leaf primitive, stamp the real parent_index before emitting.
+            let mut input = primitives_of[&group][idx].1;
+            input.parent_index = header_index;
+            buffer.push(input);
+        }
+    }
+
+    // If nothing was added beyond the header, roll back entirely.
+    if buffer.len() == start + 1 {
+        buffer.truncate(start);
+        return false;
+    }
+
+    true
+}
+
 fn update_input_buffers(
     q_primitives: Query<(
         &SdfGlobalTransform,
@@ -329,24 +404,61 @@ fn update_input_buffers(
         operand_of.insert(main_entity.id(), operand);
     }
 
-    // Build a map of group entity to its group children, excluding primitive operands.
-    // This will be used to perform a DFS and assign group ids.
-    let mut children_of: HashMap<Entity, Vec<(usize, Entity)>> =
+    // Stores only entities that are themselves groups (not leaf primitives).
+    let mut children_of: HashMap<Entity, Vec<(usize, Entity, u32)>> =
         HashMap::with_capacity(group_entities.len());
     for (&child, operand) in &operand_of {
         if group_entities.contains(&child) {
             children_of
                 .entry(operand.group_entity)
                 .or_default()
-                .push((operand.order, child));
+                .push((operand.order, child, operand.op as u32));
         }
     }
-    // Ensure siblings are visited in SdfOrder during DFS.
     for v in children_of.values_mut() {
+        v.sort_unstable_by_key(|&(order, _, _)| order);
+    }
+
+    // Collect primitives per group.
+    let mut primitives_of: HashMap<Entity, Vec<(usize, SdfInput)>> =
+        HashMap::new();
+
+    for (transform, ty, index, operand_opt) in q_primitives.iter() {
+        match operand_opt {
+            None => {
+                // Root-level primitive, lives directly in the scene, no parent group.
+                buffers.input_buffer.push(SdfInput::new(
+                    transform,
+                    ty,
+                    index,
+                    BooleanOp::Union as u32,
+                    u32::MAX, // no parent group
+                ));
+            }
+            Some(operand) => {
+                // Grouped primitive, parent_index will be patched.
+                primitives_of
+                    .entry(operand.group_entity)
+                    .or_default()
+                    .push((
+                        operand.order,
+                        SdfInput::new(
+                            transform,
+                            ty,
+                            index,
+                            operand.op as u32,
+                            0, // placeholder, patched in emit_group
+                        ),
+                    ));
+            }
+        }
+    }
+
+    for v in primitives_of.values_mut() {
         v.sort_unstable_by_key(|&(order, _)| order);
     }
 
-    // Root groups that are not a child of any other group.
+    // Emit root groups that are not a child of any other group.
     let mut roots: Vec<Entity> = group_entities
         .iter()
         .filter(|g| !operand_of.contains_key(g))
@@ -354,81 +466,15 @@ fn update_input_buffers(
         .collect();
     roots.sort_unstable();
 
-    // Assign group ids based on DFS order.
-    // This ensures that parent groups always have smaller group ids than their children.
-    let mut group_id_map: HashMap<Entity, u32> =
-        HashMap::with_capacity(group_entities.len());
-    let mut next_id: u32 = 1;
-    let mut dfs: Vec<Entity> = roots.into_iter().rev().collect();
-    while let Some(group) = dfs.pop() {
-        group_id_map.insert(group, next_id);
-        next_id += 1;
-        if let Some(children) = children_of.get(&group) {
-            for &(_, child) in children.iter().rev() {
-                dfs.push(child);
-            }
-        }
-    }
-
-    let mut sorted_inputs: Vec<(u32, usize, SdfInput)> = Vec::new();
-
-    for (transform, ty, index, operand_opt) in q_primitives.iter() {
-        let (group_id, order, op, parent_group_id, parent_op) =
-            if let Some(operand) = operand_opt {
-                let gid = group_id_map
-                    .get(&operand.group_entity)
-                    .copied()
-                    .unwrap_or(0);
-
-                let (parent_gid, par_op) =
-                    if let Some(group_operand) =
-                        operand_of.get(&operand.group_entity)
-                    {
-                        let pgid = group_id_map
-                            .get(&group_operand.group_entity)
-                            .copied()
-                            .unwrap_or(0);
-                        (pgid, group_operand.op as u32)
-                    } else {
-                        (0, BooleanOp::Union as u32)
-                    };
-
-                (
-                    gid,
-                    operand.order,
-                    operand.op as u32,
-                    parent_gid,
-                    par_op,
-                )
-            } else {
-                (
-                    0,
-                    0,
-                    BooleanOp::Union as u32,
-                    0,
-                    BooleanOp::Union as u32,
-                )
-            };
-
-        sorted_inputs.push((
-            group_id,
-            order,
-            SdfInput::new(
-                transform,
-                ty,
-                index,
-                group_id,
-                op,
-                parent_group_id,
-                parent_op,
-            ),
-        ));
-    }
-
-    sorted_inputs.sort_unstable_by_key(|(g, o, _)| (*g, *o));
-
-    for (_, _, input) in sorted_inputs {
-        buffers.input_buffer.push(input);
+    for root in roots {
+        emit_group(
+            root,
+            u32::MAX,
+            BooleanOp::Union as u32,
+            &primitives_of,
+            &children_of,
+            &mut buffers.input_buffer,
+        );
     }
 
     buffers.input_count = buffers.input_buffer.len() as u32;
@@ -641,10 +687,12 @@ struct SdfInput {
     pub scale: f32,
     pub primitive_type: u32,
     pub primitive_index: u32,
-    pub group_id: u32,
+    /// Boolean op this record applies to its parent's accumulator.
     pub boolean_op: u32,
-    pub parent_group_id: u32,
-    pub parent_op: u32,
+    /// Buffer index of this record's parent group header.
+    pub parent_index: u32,
+    /// `1` if this record is a group header; `0` if it is a leaf primitive.
+    pub has_children: u32,
 }
 
 impl SdfInput {
@@ -652,10 +700,8 @@ impl SdfInput {
         global_transform: &SdfGlobalTransform,
         ty: &PrimitiveType,
         index: &PrimitiveIndex,
-        group_id: u32,
         boolean_op: u32,
-        parent_group_id: u32,
-        parent_op: u32,
+        parent_index: u32,
     ) -> Self {
         Self {
             local_from_world: Affine3::from(
@@ -667,10 +713,9 @@ impl SdfInput {
             // Index 0 is for default value.
             // TODO: We could cache only primitives with different settings?
             primitive_index: index.0 + 1,
-            group_id,
             boolean_op,
-            parent_group_id,
-            parent_op,
+            parent_index,
+            has_children: 0,
         }
     }
 }
