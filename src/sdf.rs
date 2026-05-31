@@ -1,6 +1,7 @@
 use bevy::core_pipeline::FullscreenShader;
 use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
 use bevy::ecs::query::QueryItem;
+use bevy::ecs::system::SystemParam;
 use bevy::ecs::system::lifetimeless::Read;
 use bevy::math::Affine3;
 use bevy::prelude::*;
@@ -35,6 +36,31 @@ use crate::sdf::transform::{SdfGlobalTransform, SdfTransformPlugin};
 pub mod boolean;
 pub mod primitves;
 pub mod transform;
+
+/// Filter for operands whose relationship or ordering changed.
+type ChangedOperandFilter = Or<(
+    Changed<SdfOperandOf>,
+    Changed<SdfBooleanOp>,
+    Changed<SdfOrder>,
+)>;
+
+/// Filter used to detect any render-relevant change in the input buffer.
+type AnyInputChanged = Or<(
+    Changed<SdfGlobalTransform>,
+    Changed<PrimitiveIndex>,
+    Added<PrimitiveIndex>,
+    Changed<SdfExtractedOperand>,
+)>;
+
+/// Filter used to detect a changed or newly-added primitive component.
+type PrimitiveChanged<T> = Or<(Changed<T>, Added<T>)>;
+
+/// [`RenderDevice`] and [`RenderQueue`] grouped.
+#[derive(SystemParam)]
+struct RenderResources<'w> {
+    device: Res<'w, RenderDevice>,
+    queue: Res<'w, RenderQueue>,
+}
 
 const SHADER_ASSET_PATH: &str = "shaders/sdf_raymarch.wgsl";
 
@@ -267,11 +293,7 @@ fn extract_sdf_operands(
     q_changed_operands: Extract<
         Query<
             (&RenderEntity, &SdfOperandOf, &SdfBooleanOp, &SdfOrder),
-            Or<(
-                Changed<SdfOperandOf>,
-                Changed<SdfBooleanOp>,
-                Changed<SdfOrder>,
-            )>,
+            ChangedOperandFilter,
         >,
     >,
     mut removed: Extract<RemovedComponents<SdfOperandOf>>,
@@ -382,20 +404,11 @@ fn update_input_buffers(
         Option<&SdfExtractedOperand>,
     )>,
     q_group_operands: Query<(&SdfExtractedOperand, &MainEntity)>,
-    q_changed: Query<
-        (),
-        Or<(
-            Changed<SdfGlobalTransform>,
-            Changed<PrimitiveIndex>,
-            Added<PrimitiveIndex>,
-            Changed<SdfExtractedOperand>,
-        )>,
-    >,
+    q_changed: Query<(), AnyInputChanged>,
     removed_primitives: RemovedComponents<PrimitiveIndex>,
     removed_operands: RemovedComponents<SdfExtractedOperand>,
     mut buffers: ResMut<SdfBuffers>,
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
+    render: RenderResources,
 ) {
     // TODO: Optimize this to only update changed/added/removed transform!
     if q_changed.is_empty()
@@ -496,7 +509,7 @@ fn update_input_buffers(
     }
     buffers
         .input_buffer
-        .write_buffer(&render_device, &render_queue);
+        .write_buffer(&render.device, &render.queue);
 }
 
 fn update_primitive_buffers<
@@ -506,11 +519,10 @@ fn update_primitive_buffers<
     InMut((ty, get_buffer)): InMut<(PrimitiveType, F)>,
     mut commands: Commands,
     q_primitives: Query<(&T, Entity, Option<&PrimitiveIndex>)>,
-    q_changed: Query<(), Or<(Changed<T>, Added<T>)>>,
+    q_changed: Query<(), PrimitiveChanged<T>>,
     removed: RemovedComponents<T>,
     mut buffers: ResMut<SdfBuffers>,
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
+    render: RenderResources,
 ) {
     // TODO: Optimize this to only update changed/added/removed primitive!
     let buffer = get_buffer(&mut buffers);
@@ -541,7 +553,7 @@ fn update_primitive_buffers<
         }
     }
 
-    buffer.write_buffer(&render_device, &render_queue);
+    buffer.write_buffer(&render.device, &render.queue);
 }
 
 fn init_sdf_buffers(mut commands: Commands) {
