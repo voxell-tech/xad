@@ -264,7 +264,7 @@ struct SdfBuffers {
 /// Using [`Changed`] on the main-world components gives correct first-insertion detection
 /// without spuriously triggering every frame.
 fn extract_sdf_operands(
-    q: Extract<
+    q_changed_operands: Extract<
         Query<
             (&RenderEntity, &SdfOperandOf, &SdfBooleanOp, &SdfOrder),
             Or<(
@@ -274,9 +274,13 @@ fn extract_sdf_operands(
             )>,
         >,
     >,
+    mut removed: Extract<RemovedComponents<SdfOperandOf>>,
+    render_entities: Extract<Query<&RenderEntity>>,
     mut commands: Commands,
 ) {
-    for (render_entity, operand_of, bool_op, order) in q.iter() {
+    for (render_entity, operand_of, bool_op, order) in
+        q_changed_operands.iter()
+    {
         commands.entity(render_entity.id()).insert(
             SdfExtractedOperand {
                 group_entity: operand_of.0,
@@ -284,6 +288,14 @@ fn extract_sdf_operands(
                 order: order.0,
             },
         );
+    }
+
+    for main_entity in removed.read() {
+        if let Ok(render_entity) = render_entities.get(main_entity) {
+            commands
+                .entity(render_entity.id())
+                .remove::<SdfExtractedOperand>();
+        }
     }
 }
 
