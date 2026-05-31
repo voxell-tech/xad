@@ -44,6 +44,19 @@ type ChangedOperandFilter = Or<(
     Changed<SdfOrder>,
 )>;
 
+/// Query for extracting operands whose relationship or ordering changed into the render world.
+type ChangedOperandQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static RenderEntity,
+        &'static SdfOperandOf,
+        &'static SdfBooleanOp,
+        &'static SdfOrder,
+    ),
+    ChangedOperandFilter,
+>;
+
 /// Filter used to detect any render-relevant change in the input buffer.
 type AnyInputChanged = Or<(
     Changed<SdfGlobalTransform>,
@@ -290,12 +303,7 @@ struct SdfBuffers {
 /// Using [`Changed`] on the main-world components gives correct first-insertion detection
 /// without spuriously triggering every frame.
 fn extract_sdf_operands(
-    q_changed_operands: Extract<
-        Query<
-            (&RenderEntity, &SdfOperandOf, &SdfBooleanOp, &SdfOrder),
-            ChangedOperandFilter,
-        >,
-    >,
+    q_changed_operands: Extract<ChangedOperandQuery>,
     mut removed: Extract<RemovedComponents<SdfOperandOf>>,
     render_entities: Extract<Query<&RenderEntity>>,
     mut commands: Commands,
