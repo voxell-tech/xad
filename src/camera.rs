@@ -66,10 +66,22 @@ fn update_camera(
     let dt = time.delta_secs();
     let speed = cam.speed * dt;
 
-    if keyboard.pressed(KeyCode::KeyW) { transform.translation += *forward * speed; }
-    if keyboard.pressed(KeyCode::KeyS) { transform.translation -= *forward * speed; }
-    if keyboard.pressed(KeyCode::KeyD) { transform.translation += *right * speed; }
-    if keyboard.pressed(KeyCode::KeyA) { transform.translation -= *right * speed; }
-    if keyboard.pressed(KeyCode::KeyE) { transform.translation += up * speed; }
-    if keyboard.pressed(KeyCode::KeyQ) { transform.translation -= up * speed; }
+    if keyboard.pressed(KeyCode::KeyW) {
+        transform.translation += *forward * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyS) {
+        transform.translation -= *forward * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyD) {
+        transform.translation += *right * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyA) {
+        transform.translation -= *right * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyE) {
+        transform.translation += up * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyQ) {
+        transform.translation -= up * speed;
+    }
 }
