@@ -8,65 +8,80 @@ impl Plugin for CameraPlugin {
     }
 }
 
-/// Trackball camera, using the UEN convention.
-///
-/// <https://en.wikipedia.org/wiki/Spherical_coordinate_system>
+/// Flycam
+/// Use WASDQE movement and right-click to look
 #[derive(Component)]
 pub struct CameraController {
-    pub target: Vec3,
-    pub radius: f32,
-    pub phi: f32,   // Azimuth in degrees
-    pub theta: f32, // Elevation in degrees
+    pub speed: f32,
     pub sensitivity: f32,
+    pub yaw: f32,   // degrees, around y
+    pub pitch: f32, // degrees, around x
 }
 
 impl Default for CameraController {
     fn default() -> Self {
         Self {
-            target: Vec3::ZERO,
-            radius: 10.0,
-            phi: 0.0,
-            theta: 0.0,
-            sensitivity: 0.3,
+            speed: 5.0,
+            sensitivity: 0.15,
+            yaw: 0.0,
+            pitch: 0.0,
         }
     }
 }
 
 fn update_camera(
+    time: Res<Time>,
+    keyboard: Res<ButtonInput<KeyCode>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut mouse_motion: MessageReader<bevy::input::mouse::MouseMotion>,
-    mut mouse_wheel: MessageReader<bevy::input::mouse::MouseWheel>,
     mut query: Query<(&mut CameraController, &mut Transform)>,
 ) {
-    let Ok((mut camera, mut transform)) = query.single_mut() else {
+    let Ok((mut cam, mut transform)) = query.single_mut() else {
         return;
     };
 
-    // Zoom
-    for event in mouse_wheel.read() {
-        camera.radius -= event.y * 0.5;
-        camera.radius = camera.radius.clamp(1.0, 50.0);
-    }
-
-    // Rotate
+    // Look
     if mouse_buttons.pressed(MouseButton::Right) {
         for event in mouse_motion.read() {
-            camera.phi -= event.delta.x * camera.sensitivity;
-            camera.theta -= event.delta.y * camera.sensitivity;
+            cam.yaw -= event.delta.x * cam.sensitivity;
+            cam.pitch -= event.delta.y * cam.sensitivity;
         }
+    } else {
+        mouse_motion.clear();
     }
+    cam.pitch = cam.pitch.clamp(-89.0, 89.0);
 
-    // Clamp elevation
-    camera.theta = camera.theta.clamp(-89.0, 89.0);
+    let rotation = Quat::from_euler(
+        EulerRot::YXZ,
+        cam.yaw.to_radians(),
+        cam.pitch.to_radians(),
+        0.0,
+    );
+    transform.rotation = rotation;
 
-    // Convert spherical to Cartesian
-    let phi_r = camera.phi.to_radians();
-    let theta_r = -camera.theta.to_radians();
+    // Movement
+    let forward = transform.forward();
+    let right = transform.right();
+    let up = Vec3::Y;
+    let dt = time.delta_secs();
+    let speed = cam.speed * dt;
 
-    let x = camera.radius * theta_r.cos() * phi_r.sin();
-    let y = camera.radius * theta_r.sin();
-    let z = camera.radius * theta_r.cos() * phi_r.cos();
-
-    transform.translation = camera.target + Vec3::new(x, y, z);
-    transform.look_at(camera.target, Vec3::Y);
+    if keyboard.pressed(KeyCode::KeyW) {
+        transform.translation += *forward * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyS) {
+        transform.translation -= *forward * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyD) {
+        transform.translation += *right * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyA) {
+        transform.translation -= *right * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyE) {
+        transform.translation += up * speed;
+    }
+    if keyboard.pressed(KeyCode::KeyQ) {
+        transform.translation -= up * speed;
+    }
 }
