@@ -128,6 +128,10 @@ impl SdfTransform {
         self.scale = scale;
         self
     }
+
+    pub fn from_xyz(x: f32, y: f32, z: f32) -> Self {
+        Self::default().with_translation(Vec3::new(x, y, z))
+    }
 }
 
 impl Default for SdfTransform {

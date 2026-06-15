@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use crate::sdf::transform::SdfTransform;
+
 pub struct SdfBooleanPlugin;
 
 impl Plugin for SdfBooleanPlugin {
@@ -100,6 +102,30 @@ impl SdfGroup {
 
     pub fn exclude(self, entity: Entity) -> Self {
         self.push_operand(entity, BooleanOp::Exclusion)
+    }
+
+    /// Position the entire group result in world space.
+    pub fn translate(self, translation: Vec3) -> SdfGroupBuilder {
+        SdfGroupBuilder {
+            group: self,
+            transform: SdfTransform::default()
+                .with_translation(translation),
+        }
+    }
+
+    pub fn build(self) -> impl Bundle {
+        (self, SdfTransform::default())
+    }
+}
+
+pub struct SdfGroupBuilder {
+    group: SdfGroup,
+    transform: SdfTransform,
+}
+
+impl SdfGroupBuilder {
+    pub fn build(self) -> impl Bundle {
+        (self.group, self.transform)
     }
 }
 

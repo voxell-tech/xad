@@ -4,6 +4,8 @@ use bevy::render::extract_component::{
 };
 use bevy::render::render_resource::ShaderType;
 
+use crate::sdf::transform::SdfTransform;
+
 pub struct SdfPrimitivePlugin;
 
 impl Plugin for SdfPrimitivePlugin {
@@ -28,6 +30,7 @@ impl Plugin for SdfPrimitivePlugin {
     Clone,
     Copy,
 )]
+#[require(SdfTransform)]
 pub struct SdfSphere {
     pub radius: f32,
 }
@@ -51,6 +54,7 @@ impl Default for SdfSphere {
     Clone,
     Copy,
 )]
+#[require(SdfTransform)]
 pub struct SdfCuboid {
     pub extents: Vec3,
 }
@@ -74,6 +78,7 @@ impl Default for SdfCuboid {
     Clone,
     Copy,
 )]
+#[require(SdfTransform)]
 pub struct SdfRoundCuboid {
     pub extents: Vec3,
     pub radius: f32,
@@ -101,7 +106,7 @@ impl Default for SdfRoundCuboid {
     Clone,
     Copy,
 )]
-
+#[require(SdfTransform)]
 pub struct SdfCapsule {
     pub point_a: Vec3,
     pub point_b: Vec3,
@@ -131,7 +136,7 @@ impl Default for SdfCapsule {
     Clone,
     Copy,
 )]
-
+#[require(SdfTransform)]
 pub struct SdfTorus {
     pub ring_radius: f32,
     pub tube_radius: f32,
