@@ -3,6 +3,8 @@ use bevy::prelude::*;
 pub mod camera;
 pub mod sdf;
 
+pub mod bezier;
+
 use camera::CameraPlugin;
 use sdf::SdfPlugin;
 
