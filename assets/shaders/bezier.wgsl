@@ -14,6 +14,9 @@ struct BezierCurve {
     kind:  u32,
     // non-zero = draw control points
     debug: u32,
+    // non-zero = draw a dot at each endpoint
+    draw_endpoints: u32,
+    endpoint_radius: f32,
 }
 
 struct BezierBuffer {
@@ -178,6 +181,16 @@ fn draw_debug_overlay(color: vec3f, uv: vec2f, curve: BezierCurve) -> vec3f {
 }
 // 
 
+fn draw_endpoint(canvas: vec4f, uv: vec2f, p: vec2f, radius: f32, dot_color: vec4f) -> vec4f {
+    let d        = distance(uv, p);
+    let aa       = fwidth(d);
+    let mask     = 1.0 - smoothstep(radius - aa, radius + aa, d);
+    let coverage = mask * dot_color.a;
+    let color    = mix(canvas.rgb, dot_color.rgb, coverage);
+    let alpha    = mix(canvas.a, 1.0, coverage);
+    return vec4f(color, alpha);
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4f {
     let uv   = in.uv;
@@ -200,6 +213,15 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
 
         if (curve.debug != 0u) {
             color = draw_debug_overlay(color, uv, curve);
+        }
+
+        if (curve.draw_endpoints != 0u) {
+            let last_point = select(curve.p2, curve.p3, curve.kind != 0u);
+            var canvas = vec4f(color, alpha);
+            canvas = draw_endpoint(canvas, uv, curve.p0, curve.endpoint_radius, curve.color);
+            canvas = draw_endpoint(canvas, uv, last_point, curve.endpoint_radius, curve.color);
+            color = canvas.rgb;
+            alpha = canvas.a;
         }
     }
 

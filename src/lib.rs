@@ -4,6 +4,7 @@ pub mod camera;
 pub mod sdf;
 
 pub mod bezier;
+pub mod sketch;
 
 use camera::CameraPlugin;
 use sdf::SdfPlugin;
