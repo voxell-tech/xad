@@ -85,7 +85,7 @@ fn setup(
             .looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    let background = LinearRgba::new(0.05, 0.05, 0.08, 1.0);
+    let background = LinearRgba::new(0.05, 0.05, 0.08, 0.0);
 
     let mut rng = Rng::new(67676767); // lol
     let points: Vec<[Vec2; 4]> = (0..CURVE_COLORS.len())

@@ -182,6 +182,7 @@ fn draw_debug_overlay(color: vec3f, uv: vec2f, curve: BezierCurve) -> vec3f {
 fn fragment(in: VertexOutput) -> @location(0) vec4f {
     let uv   = in.uv;
     var color = data.background_color.rgb;
+    var alpha = data.background_color.a;
 
     for (var i = 0u; i < data.curve_count; i++) {
         let curve = data.curves[i];
@@ -193,13 +194,15 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
         }
         let aa   = fwidth(d);
         let mask = 1.0 - smoothstep(curve.width - aa, curve.width + aa, d);
-        color    = mix(color, curve.color.rgb, mask * curve.color.a);
+        let coverage = mask * curve.color.a;
+        color    = mix(color, curve.color.rgb, coverage);
+        alpha    = mix(alpha, 1.0, coverage);
 
         if (curve.debug != 0u) {
             color = draw_debug_overlay(color, uv, curve);
         }
     }
 
-    return vec4f(color, 1.0);
+    return vec4f(color, alpha);
 }
 

@@ -163,4 +163,8 @@ impl Material for BezierMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/bezier.wgsl".into()
     }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
 }
