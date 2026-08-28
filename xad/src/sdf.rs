@@ -25,6 +25,7 @@ use crate::sdf::primitves::{
 use crate::sdf::transform::{SdfGlobalTransform, SdfTransformPlugin};
 
 pub mod boolean;
+pub mod extrude;
 pub mod primitves;
 pub mod transform;
 

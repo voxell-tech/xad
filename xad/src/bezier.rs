@@ -11,6 +11,12 @@ impl Plugin for BezierPlugin {
     }
 }
 
+// TODO: allow appending to the gpu buffer
+// to edit existing curves, we need to maintain a cpu-side copy,
+// and after any edits, resend the entire thing to the gpu
+#[derive(Component, Debug, Clone, Default)]
+pub struct SketchCurves(pub Vec<BezierCurve>);
+
 #[derive(Clone, Copy, Debug, Default, ShaderType)]
 pub struct BezierCurve {
     // Control points
