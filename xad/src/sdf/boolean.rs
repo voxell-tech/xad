@@ -2,6 +2,12 @@ use bevy::prelude::*;
 use bevy::render::extract_component::{
     ExtractComponent, ExtractComponentPlugin,
 };
+use command_system::{
+    Feature, FeatureContext, FeatureError, FeatureId, FeatureKind,
+    FeatureOutput,
+};
+
+use crate::sdf::transform::SdfTransform;
 
 pub struct SdfBooleanPlugin;
 
@@ -97,4 +103,49 @@ fn assign_sdf_group_children(
     }
 
     commands.entity(group_entity).add_children(&child_entities);
+}
+
+#[derive(Debug)]
+pub struct BooleanSubtract {
+    pub target: FeatureId,
+    pub tool: FeatureId,
+}
+
+impl Feature<World> for BooleanSubtract {
+    fn kind(&self) -> FeatureKind {
+        FeatureKind::Volume
+    }
+
+    fn depends_on(&self) -> Vec<FeatureId> {
+        vec![self.target, self.tool]
+    }
+
+    fn apply(
+        &self,
+        world: &mut World,
+        ctx: &FeatureContext<World>,
+    ) -> Result<FeatureOutput<World>, FeatureError> {
+        let target = *ctx
+            .get::<Entity>(self.target)
+            .ok_or(FeatureError::MissingDependency(self.target))?;
+        let tool = *ctx
+            .get::<Entity>(self.tool)
+            .ok_or(FeatureError::MissingDependency(self.tool))?;
+
+        let entity = world
+            .spawn((
+                SdfGroup::new(target).difference(tool),
+                SdfTransform::default(),
+            ))
+            .id();
+
+        Ok(FeatureOutput::with_cleanup(
+            entity,
+            move |world: &mut World| {
+                if world.get_entity(entity).is_ok() {
+                    world.entity_mut(entity).despawn();
+                }
+            },
+        ))
+    }
 }
