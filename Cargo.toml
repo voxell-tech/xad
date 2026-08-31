@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bevy = { version = "0.18.0", default-features = false, features = ["3d", "file_watcher"] }
 bevy_egui = "0.39.0"
+rand = "0.9.2"
 
 [[example]]
 name = "bezier_single"
@@ -18,3 +19,7 @@ path = "examples/bezier_multi.rs"
 [[example]]
 name = "bezier_realtime"
 path = "examples/bezier_realtime.rs"
+
+[[example]]
+name = "bezier_sketch"
+path = "examples/bezier_sketch.rs"

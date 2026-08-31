@@ -31,6 +31,13 @@ pub struct BezierCurve {
     // 0: Dont show
     // 1: Show control points
     pub debug: u32,
+
+    // 0: Dont show
+    // 1: Show a dot at each endpoint (p0 and the last control point)
+    pub draw_endpoints: u32,
+
+    // Radius of the endpoint dots
+    pub endpoint_radius: f32,
 }
 
 impl BezierCurve {
@@ -44,6 +51,8 @@ impl BezierCurve {
             width: 0.012,
             kind: 1,
             debug: 0,
+            draw_endpoints: 0,
+            endpoint_radius: 0.02,
         }
     }
 
@@ -57,6 +66,8 @@ impl BezierCurve {
             width: 0.012,
             kind: 0,
             debug: 0,
+            draw_endpoints: 0,
+            endpoint_radius: 0.02,
         }
     }
 
@@ -77,6 +88,22 @@ impl BezierCurve {
 
     pub fn with_debug(mut self, debug: bool) -> Self {
         self.debug = debug as u32;
+        self
+    }
+
+    pub fn with_draw_endpoints(
+        mut self,
+        draw_endpoints: bool,
+    ) -> Self {
+        self.draw_endpoints = draw_endpoints as u32;
+        self
+    }
+
+    pub fn with_endpoint_radius(
+        mut self,
+        endpoint_radius: f32,
+    ) -> Self {
+        self.endpoint_radius = endpoint_radius;
         self
     }
 }
