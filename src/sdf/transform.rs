@@ -1,3 +1,4 @@
+use crate::sdf::boolean::{SdfOperandOf, SdfOperands};
 use bevy::math::Affine3A;
 use bevy::prelude::*;
 use bevy::render::extract_component::{
@@ -40,44 +41,63 @@ fn propagate_transform(
     // TODO: Use the Ref to skip unchanged transforms.
     mut q_root_transforms: Query<
         (&mut SdfGlobalTransform, Ref<SdfTransform>, Entity),
-        Without<ChildOf>,
+        Without<SdfOperandOf>,
     >,
     mut q_child_transforms: Query<
         (&mut SdfGlobalTransform, Ref<SdfTransform>),
-        With<ChildOf>,
+        With<SdfOperandOf>,
     >,
-    q_children: Query<&Children>,
+    q_operands: Query<&SdfOperands>,
 ) {
     for (mut global_transform, transform, entity) in
         q_root_transforms.iter_mut()
     {
-        *global_transform = SdfGlobalTransform::from(*transform);
+        // Only recompute the root global transform if its local changed.
+        let root_changed = transform.is_changed();
+        if root_changed {
+            *global_transform = SdfGlobalTransform::from(*transform);
+        }
 
-        if let Ok(children) = q_children.get(entity) {
+        if let Ok(operands) = q_operands.get(entity) {
             // Iteratively propagate the transform.
             // TODO: Optimize this:
             // - Offer stack based recursive?
             // - Parallelize this algo!
             // - Static analysis, skip subtrees that are not mutated.
             let mut global_transforms = vec![*global_transform];
-            let mut children =
-                children.iter().map(|e| (e, 0)).collect::<Vec<_>>();
+            let mut children = operands
+                .iter()
+                .map(|e| (e, 0usize, root_changed))
+                .collect::<Vec<_>>();
 
-            while let Some((child, idx)) = children.pop()
-                && let Ok((
-                    mut child_global_transform,
-                    child_transform,
-                )) = q_child_transforms.get_mut(child)
-            {
-                let global_transform = &global_transforms[idx];
-                *child_global_transform =
-                    global_transform.mul_transform(*child_transform);
+            let mut head = 0;
+            while head < children.len() {
+                let (child, idx, parent_changed) = children[head];
+                head += 1;
+
+                let Ok((mut child_global_transform, child_transform)) =
+                    q_child_transforms.get_mut(child)
+                else {
+                    continue;
+                };
+
+                let child_changed =
+                    parent_changed || child_transform.is_changed();
+
+                if child_changed {
+                    let global_transform = &global_transforms[idx];
+                    *child_global_transform = global_transform
+                        .mul_transform(*child_transform);
+                }
 
                 let new_idx = global_transforms.len();
                 global_transforms.push(*child_global_transform);
-                if let Ok(nested_children) = q_children.get(child) {
+
+                if let Ok(nested_operands) = q_operands.get(child) {
                     children.extend(
-                        nested_children.iter().map(|e| (e, new_idx)),
+                        nested_operands
+                            .iter()
+                            .map(|e| (e, new_idx, child_changed)),
                     );
                 }
             }
@@ -108,6 +128,10 @@ impl SdfTransform {
         self.scale = scale;
         self
     }
+
+    pub fn from_xyz(x: f32, y: f32, z: f32) -> Self {
+        Self::default().with_translation(Vec3::new(x, y, z))
+    }
 }
 
 impl Default for SdfTransform {
@@ -123,10 +147,12 @@ impl Default for SdfTransform {
 impl From<SdfTransform> for SdfGlobalTransform {
     fn from(value: SdfTransform) -> Self {
         Self {
-            world_from_local: Affine3A::from_rotation_translation(
-                value.rotation,
-                value.translation,
-            ),
+            world_from_local:
+                Affine3A::from_scale_rotation_translation(
+                    Vec3::splat(value.scale),
+                    value.rotation,
+                    value.translation,
+                ),
             scale: value.scale,
         }
     }

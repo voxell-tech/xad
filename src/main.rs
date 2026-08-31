@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use xad::XadPlugin;
 use xad::camera::CameraController;
 use xad::sdf::SdfCamera;
-use xad::sdf::boolean::SdfGroup;
+use xad::sdf::boolean::{SdfGroup, SdfOperandOf, SdfOperands};
 use xad::sdf::primitves::{
     SdfSphere,
     // SdfCapsule,
@@ -39,82 +39,236 @@ fn test_setup(
 
     // Boolean groups
     // Difference: sphere_a - sphere_b
-    let sphere_a = commands
-        .spawn((SdfSphere { radius: 0.6 }, SdfTransform::default()))
-        .id();
+    let sphere_a = commands.spawn(SdfSphere { radius: 0.6 }).id();
+
     let sphere_b = commands
         .spawn((
             SdfSphere { radius: 0.6 },
-            SdfTransform::default()
-                .with_translation(Vec3::new(0.3, 0.0, 0.0)),
+            SdfTransform::from_xyz(0.3, 0.0, 0.0),
         ))
         .id();
-    commands.spawn((
-        SdfGroup::new(sphere_a).difference(sphere_b),
-        SdfTransform::default()
-            .with_translation(Vec3::new(-2.0, 0.0, 0.0)),
-    ));
+
+    commands.spawn(
+        SdfGroup::new(sphere_a)
+            .difference(sphere_b)
+            .translate(Vec3::new(-2.0, 0.0, 0.0))
+            .build(),
+    );
 
     // Intersection: sphere_a n sphere_b
     let sphere_a = commands
         .spawn((
             SdfSphere { radius: 0.5 },
-            SdfTransform::default()
-                .with_translation(Vec3::new(-0.2, 0.0, 0.0)),
+            SdfTransform::from_xyz(-0.2, 0.0, 0.0),
         ))
         .id();
+
     let sphere_b = commands
         .spawn((
             SdfSphere { radius: 0.5 },
-            SdfTransform::default()
-                .with_translation(Vec3::new(0.2, 0.0, 0.0)),
+            SdfTransform::from_xyz(0.2, 0.0, 0.0),
         ))
         .id();
-    commands.spawn((
-        SdfGroup::new(sphere_a).intersect(sphere_b),
-        SdfTransform::default()
-            .with_translation(Vec3::new(0.0, 0.0, 0.0)),
-    ));
+
+    commands
+        .spawn(SdfGroup::new(sphere_a).intersect(sphere_b).build());
 
     // Exclusion: (sphere_a XOR sphere_b) - sphere_c
     let sphere_a = commands
         .spawn((
             SdfSphere { radius: 0.45 },
-            SdfTransform::default()
-                .with_translation(Vec3::new(-0.2, 0.0, 0.0)),
+            SdfTransform::from_xyz(-0.2, 0.0, 0.0),
         ))
         .id();
+
     let sphere_b = commands
         .spawn((
             SdfSphere { radius: 0.45 },
-            SdfTransform::default()
-                .with_translation(Vec3::new(0.2, 0.0, 0.0)),
+            SdfTransform::from_xyz(0.2, 0.0, 0.0),
         ))
         .id();
+
     let sphere_c = commands
         .spawn((
             SdfSphere { radius: 0.3 },
-            SdfTransform::default()
-                .with_translation(Vec3::new(0.0, 0.3, 0.0)),
+            SdfTransform::from_xyz(0.0, 0.3, 0.0),
         ))
         .id();
-    commands.spawn((
+
+    commands.spawn(
         SdfGroup::new(sphere_a)
             .exclude(sphere_b)
-            .difference(sphere_c),
-        SdfTransform::default()
-            .with_translation(Vec3::new(2.0, 0.0, 0.0)),
-    ));
+            .difference(sphere_c)
+            .translate(Vec3::new(2.0, 0.0, 0.0))
+            .build(),
+    );
 
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(10.0)))),
         MeshMaterial3d(materials.add(StandardMaterial::default())),
         Transform::default(),
     ));
+
+    // Nested boolean test (2 levels): big_sphere - (medium_sphere - small_sphere)
+    let nested_big_sphere =
+        commands.spawn(SdfSphere { radius: 0.6 }).id();
+
+    let nested_medium_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.45 },
+            SdfTransform::from_xyz(0.25, 0.0, 0.0),
+        ))
+        .id();
+
+    let nested_small_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.25 },
+            SdfTransform::from_xyz(0.25, 0.0, 0.0),
+        ))
+        .id();
+
+    let nested_inner_group = commands
+        .spawn(
+            SdfGroup::new(nested_medium_sphere)
+                .difference(nested_small_sphere)
+                .build(),
+        )
+        .id();
+
+    commands.spawn(
+        SdfGroup::new(nested_big_sphere)
+            .difference(nested_inner_group)
+            .translate(Vec3::new(0.0, 1.5, 0.0))
+            .build(),
+    );
+
+    // Nested boolean test (3 levels): big_sphere - (small_sphere - (tiny_sphere_a - tiny_sphere_b))
+    let nested3_big_sphere =
+        commands.spawn(SdfSphere { radius: 0.6 }).id();
+
+    let nested3_small_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.4 },
+            SdfTransform::from_xyz(0.4, 0.0, 0.0),
+        ))
+        .id();
+
+    let nested3_tiny_sphere_a = commands
+        .spawn((
+            SdfSphere { radius: 0.25 },
+            SdfTransform::from_xyz(0.7, 0.0, 0.0),
+        ))
+        .id();
+
+    let nested3_tiny_sphere_b = commands
+        .spawn((
+            SdfSphere { radius: 0.12 },
+            SdfTransform::from_xyz(0.7, 0.0, 0.0),
+        ))
+        .id();
+
+    // Level 3: nested3_tiny_sphere_a - nested3_tiny_sphere_b
+    let nested3_level3_group = commands
+        .spawn(
+            SdfGroup::new(nested3_tiny_sphere_a)
+                .difference(nested3_tiny_sphere_b)
+                .build(),
+        )
+        .id();
+
+    // Level 2: nested3_small_sphere - nested3_level3_group
+    let nested3_level2_group = commands
+        .spawn(
+            SdfGroup::new(nested3_small_sphere)
+                .difference(nested3_level3_group)
+                .build(),
+        )
+        .id();
+
+    // Level 1: nested3_big_sphere - nested3_level2_group
+    commands.spawn(
+        SdfGroup::new(nested3_big_sphere)
+            .difference(nested3_level2_group)
+            .translate(Vec3::new(0.0, -1.5, 0.0))
+            .build(),
+    );
+
+    // Sibling test: (big_sphere - left_sphere) n (big_sphere - right_sphere)
+    let left_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.5 },
+            SdfTransform::from_xyz(-0.5, 0.0, 0.0),
+        ))
+        .id();
+
+    let group_left =
+        commands.spawn(SdfGroup::new(left_sphere).build()).id();
+
+    let right_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.5 },
+            SdfTransform::from_xyz(0.5, 0.0, 0.0),
+        ))
+        .id();
+
+    let group_right =
+        commands.spawn(SdfGroup::new(right_sphere).build()).id();
+
+    let sphere_a = commands.spawn(SdfSphere { radius: 0.5 }).id();
+
+    commands.spawn(
+        SdfGroup::new(sphere_a)
+            .difference(group_left)
+            .difference(group_right)
+            .translate(Vec3::new(-2.0, 1.5, 0.0))
+            .build(),
+    );
+
+    // Primitive after subgroup ordering test
+    let big_sphere = commands.spawn(SdfSphere { radius: 0.55 }).id();
+
+    // inner_group: med_sphere − small_sphere
+    let med_sphere = commands.spawn(SdfSphere { radius: 0.35 }).id();
+
+    let small_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.2 },
+            SdfTransform::from_xyz(0.15, 0.0, 0.0),
+        ))
+        .id();
+
+    let inner_group = commands
+        .spawn(
+            SdfGroup::new(med_sphere)
+                .difference(small_sphere)
+                .translate(Vec3::new(0.25, 0.0, 0.0))
+                .build(),
+        )
+        .id();
+
+    // cap_sphere: (order=2, AFTER subgroup)
+    let cap_sphere = commands
+        .spawn((
+            SdfSphere { radius: 0.45 },
+            SdfTransform::from_xyz(0.0, 0.35, 0.0),
+        ))
+        .id();
+
+    // outer_group: big − inner_group − cap
+    commands.spawn(
+        SdfGroup::new(big_sphere)
+            .difference(inner_group)
+            .difference(cap_sphere)
+            .translate(Vec3::new(2.0, 1.5, 0.0))
+            .build(),
+    );
 }
 
 fn rotate_sdf(
-    mut q_transforms: Query<&mut SdfTransform>,
+    mut q_transforms: Query<
+        &mut SdfTransform,
+        (With<SdfOperands>, Without<SdfOperandOf>),
+    >,
     time: Res<Time>,
 ) {
     for (i, mut transform) in q_transforms.iter_mut().enumerate() {

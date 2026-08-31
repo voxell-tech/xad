@@ -1,6 +1,7 @@
 use bevy::core_pipeline::FullscreenShader;
 use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
 use bevy::ecs::query::QueryItem;
+use bevy::ecs::system::SystemParam;
 use bevy::ecs::system::lifetimeless::Read;
 use bevy::math::Affine3;
 use bevy::prelude::*;
@@ -12,12 +13,20 @@ use bevy::render::render_resource::*;
 use bevy::render::renderer::{
     RenderContext, RenderDevice, RenderQueue,
 };
+use bevy::render::sync_world::{MainEntity, RenderEntity};
 use bevy::render::view::{
     ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms,
 };
-use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
+use bevy::render::{
+    Extract, ExtractSchedule, Render, RenderApp, RenderStartup,
+    RenderSystems,
+};
+use std::collections::{HashMap, HashSet};
 
-use crate::sdf::boolean::{BooleanOp, SdfBooleanPlugin, SdfOperand};
+use crate::sdf::boolean::{
+    BooleanOp, SdfBooleanOp, SdfBooleanPlugin, SdfExtractedOperand,
+    SdfOperandOf, SdfOrder,
+};
 use crate::sdf::primitves::{
     SdfCapsule, SdfCuboid, SdfPrimitivePlugin, SdfRoundCuboid,
     SdfSphere, SdfTorus,
@@ -27,6 +36,44 @@ use crate::sdf::transform::{SdfGlobalTransform, SdfTransformPlugin};
 pub mod boolean;
 pub mod primitves;
 pub mod transform;
+
+/// Filter for operands whose relationship or ordering changed.
+type ChangedOperandFilter = Or<(
+    Changed<SdfOperandOf>,
+    Changed<SdfBooleanOp>,
+    Changed<SdfOrder>,
+)>;
+
+/// Query for extracting operands whose relationship or ordering changed into the render world.
+type ChangedOperandQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static RenderEntity,
+        &'static SdfOperandOf,
+        &'static SdfBooleanOp,
+        &'static SdfOrder,
+    ),
+    ChangedOperandFilter,
+>;
+
+/// Filter used to detect any render-relevant change in the input buffer.
+type AnyInputChanged = Or<(
+    Changed<SdfGlobalTransform>,
+    Changed<PrimitiveIndex>,
+    Added<PrimitiveIndex>,
+    Changed<SdfExtractedOperand>,
+)>;
+
+/// Filter used to detect a changed or newly-added primitive component.
+type PrimitiveChanged<T> = Or<(Changed<T>, Added<T>)>;
+
+/// [`RenderDevice`] and [`RenderQueue`] grouped.
+#[derive(SystemParam)]
+struct RenderResources<'w> {
+    device: Res<'w, RenderDevice>,
+    queue: Res<'w, RenderQueue>,
+}
 
 const SHADER_ASSET_PATH: &str = "shaders/sdf_raymarch.wgsl";
 
@@ -47,6 +94,7 @@ impl Plugin for SdfPlugin {
         };
 
         render_app
+            .add_systems(ExtractSchedule, extract_sdf_operands)
             .add_systems(
                 RenderStartup,
                 (init_sdf_pipeline, init_sdf_buffers),
@@ -130,6 +178,11 @@ impl ViewNode for SdfNode {
         let pipeline_cache = world.resource::<PipelineCache>();
         let sdf_pipeline = world.resource::<SdfPipeline>();
         let sdf_buffers = world.resource::<SdfBuffers>();
+
+        if sdf_buffers.input_count == 0 {
+            return Ok(());
+        }
+
         let view_uniforms = world.resource::<ViewUniforms>();
         let sdf_cameras =
             world.resource::<ComponentUniforms<SdfCamera>>();
@@ -242,6 +295,113 @@ struct SdfBuffers {
     round_cuboid_buffer: BufferVec<SdfRoundCuboid>,
     capsule_buffer: BufferVec<SdfCapsule>,
     torus_buffer: BufferVec<SdfTorus>,
+    input_count: u32,
+}
+
+/// Extracts [`SdfExtractedOperand`] for all operand entities into the render world.
+///
+/// Using [`Changed`] on the main-world components gives correct first-insertion detection
+/// without spuriously triggering every frame.
+fn extract_sdf_operands(
+    q_changed_operands: Extract<ChangedOperandQuery>,
+    mut removed: Extract<RemovedComponents<SdfOperandOf>>,
+    render_entities: Extract<Query<&RenderEntity>>,
+    mut commands: Commands,
+) {
+    for (render_entity, operand_of, bool_op, order) in
+        q_changed_operands.iter()
+    {
+        commands.entity(render_entity.id()).insert(
+            SdfExtractedOperand {
+                group_entity: operand_of.0,
+                op: bool_op.0,
+                order: order.0,
+            },
+        );
+    }
+
+    for main_entity in removed.read() {
+        if let Ok(render_entity) = render_entities.get(main_entity) {
+            commands
+                .entity(render_entity.id())
+                .remove::<SdfExtractedOperand>();
+        }
+    }
+}
+
+/// Emit one group into the packed buffer in preorder.
+///
+/// By emitting the group header before recursing into children, the header's
+/// buffer position becomes its stable, unique identity.  Every child record
+/// carries `parent_index` = that position, so the shader can detect group
+/// boundaries purely from `parent_index` mismatches.
+fn emit_group(
+    group: Entity,
+    parent_header_index: u32,
+    boolean_op: u32,
+    primitives_of: &HashMap<Entity, Vec<(usize, SdfInput)>>,
+    children_of: &HashMap<Entity, Vec<(usize, Entity, u32)>>,
+    buffer: &mut BufferVec<SdfInput>,
+) -> bool {
+    // Save position so it can roll back if this group turns out to be empty.
+    let start = buffer.len();
+    let header_index = start as u32;
+
+    // Emit group header, rolled back below if no children follow.
+    buffer.push(SdfInput {
+        has_children: 1,
+        boolean_op,
+        parent_index: parent_header_index,
+        ..SdfInput::default()
+    });
+
+    // Build and sort slots by SdfOrder
+    // Interleave direct-primitive slots and subgroup slots respecting user order.
+    let prim_count = primitives_of.get(&group).map_or(0, |v| v.len());
+    let child_count = children_of.get(&group).map_or(0, |v| v.len());
+    let mut slots: Vec<(usize, bool, usize)> =
+        Vec::with_capacity(prim_count + child_count);
+
+    if let Some(prims) = primitives_of.get(&group) {
+        for (i, &(order, _)) in prims.iter().enumerate() {
+            slots.push((order, false, i));
+        }
+    }
+    if let Some(children) = children_of.get(&group) {
+        for (i, &(order, _, _)) in children.iter().enumerate() {
+            slots.push((order, true, i));
+        }
+    }
+    slots.sort_unstable_by_key(|&(order, _, _)| order);
+
+    // Emit children in order
+    for (_, is_sub, idx) in slots {
+        if is_sub {
+            let (_, child, child_op) = children_of[&group][idx];
+            // Recursive call returns false and self-truncates if child is empty.
+            emit_group(
+                child,
+                header_index, // child's parent is this group's header
+                child_op,
+                primitives_of,
+                children_of,
+                buffer,
+            );
+        } else {
+            // Leaf primitive, stamp the real parent_index before emitting.
+            let mut input = primitives_of[&group][idx].1;
+            input.parent_index = header_index;
+            buffer.push(input);
+        }
+    }
+
+    // If nothing was added beyond the header, roll back entirely.
+    if buffer.len() == start + 1 {
+        buffer.truncate(start);
+        return false;
+    }
+
+    true
 }
 
 fn update_input_buffers(
@@ -249,59 +409,115 @@ fn update_input_buffers(
         &SdfGlobalTransform,
         &PrimitiveType,
         &PrimitiveIndex,
-        Option<&SdfOperand>,
+        Option<&SdfExtractedOperand>,
     )>,
+    q_group_operands: Query<(&SdfExtractedOperand, &MainEntity)>,
+    q_changed: Query<(), AnyInputChanged>,
+    removed_primitives: RemovedComponents<PrimitiveIndex>,
+    removed_operands: RemovedComponents<SdfExtractedOperand>,
     mut buffers: ResMut<SdfBuffers>,
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
+    render: RenderResources,
 ) {
     // TODO: Optimize this to only update changed/added/removed transform!
+    if q_changed.is_empty()
+        && removed_primitives.is_empty()
+        && removed_operands.is_empty()
+    {
+        return;
+    }
+
     buffers.input_buffer.clear();
 
-    let mut sorted_inputs =
-        Vec::with_capacity(q_primitives.iter().len());
+    let mut group_entities: HashSet<Entity> = HashSet::new();
+    let mut operand_of: HashMap<Entity, &SdfExtractedOperand> =
+        HashMap::new();
+
+    for (operand, main_entity) in q_group_operands.iter() {
+        group_entities.insert(operand.group_entity);
+        operand_of.insert(main_entity.id(), operand);
+    }
+
+    // Stores only entities that are themselves groups (not leaf primitives).
+    let mut children_of: HashMap<Entity, Vec<(usize, Entity, u32)>> =
+        HashMap::with_capacity(group_entities.len());
+    for (&child, operand) in &operand_of {
+        if group_entities.contains(&child) {
+            children_of
+                .entry(operand.group_entity)
+                .or_default()
+                .push((operand.order, child, operand.op as u32));
+        }
+    }
+    for v in children_of.values_mut() {
+        v.sort_unstable_by_key(|&(order, _, _)| order);
+    }
+
+    // Collect primitives per group.
+    let mut primitives_of: HashMap<Entity, Vec<(usize, SdfInput)>> =
+        HashMap::new();
 
     for (transform, ty, index, operand_opt) in q_primitives.iter() {
-        if let Some(operand) = operand_opt {
-            // Grouped primitive
-            sorted_inputs.push((
-                operand.group_id,
-                operand.order,
-                SdfInput::new(
+        match operand_opt {
+            None => {
+                // Root-level primitive, lives directly in the scene, no parent group.
+                buffers.input_buffer.push(SdfInput::new(
                     transform,
                     ty,
                     index,
-                    operand.group_id,
-                    operand.op as u32,
-                ),
-            ));
-        } else {
-            // Ungrouped primitive
-            sorted_inputs.push((
-                0,
-                0,
-                SdfInput::new(
-                    transform,
-                    ty,
-                    index,
-                    0,
                     BooleanOp::Union as u32,
-                ),
-            ));
+                    u32::MAX, // no parent group
+                ));
+            }
+            Some(operand) => {
+                // Grouped primitive, parent_index will be patched.
+                primitives_of
+                    .entry(operand.group_entity)
+                    .or_default()
+                    .push((
+                        operand.order,
+                        SdfInput::new(
+                            transform,
+                            ty,
+                            index,
+                            operand.op as u32,
+                            0, // placeholder, patched in emit_group
+                        ),
+                    ));
+            }
         }
     }
 
-    sorted_inputs.sort_unstable_by_key(|(g, o, _)| (*g, *o));
-
-    for (_, _, input) in sorted_inputs {
-        buffers.input_buffer.push(input);
+    for v in primitives_of.values_mut() {
+        v.sort_unstable_by_key(|&(order, _)| order);
     }
 
-    if !buffers.input_buffer.is_empty() {
-        buffers
-            .input_buffer
-            .write_buffer(&render_device, &render_queue);
+    // Emit root groups that are not a child of any other group.
+    let mut roots: Vec<Entity> = group_entities
+        .iter()
+        .filter(|g| !operand_of.contains_key(g))
+        .copied()
+        .collect();
+    roots.sort_unstable();
+
+    for root in roots {
+        emit_group(
+            root,
+            u32::MAX,
+            BooleanOp::Union as u32,
+            &primitives_of,
+            &children_of,
+            &mut buffers.input_buffer,
+        );
     }
+
+    buffers.input_count = buffers.input_buffer.len() as u32;
+
+    if buffers.input_buffer.is_empty() {
+        buffers.input_buffer.push(SdfInput::default());
+    }
+    buffers
+        .input_buffer
+        .write_buffer(&render.device, &render.queue);
 }
 
 fn update_primitive_buffers<
@@ -310,26 +526,42 @@ fn update_primitive_buffers<
 >(
     InMut((ty, get_buffer)): InMut<(PrimitiveType, F)>,
     mut commands: Commands,
-    q_primitives: Query<(&T, Entity)>,
+    q_primitives: Query<(&T, Entity, Option<&PrimitiveIndex>)>,
+    q_changed: Query<(), PrimitiveChanged<T>>,
+    removed: RemovedComponents<T>,
     mut buffers: ResMut<SdfBuffers>,
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
+    render: RenderResources,
 ) {
     // TODO: Optimize this to only update changed/added/removed primitive!
     let buffer = get_buffer(&mut buffers);
+
+    if q_changed.is_empty()
+        && removed.is_empty()
+        && !buffer.is_empty()
+    {
+        return;
+    }
+
     buffer.clear();
     // TODO: This could be replaced with a custom self managed empty buffer
     // next time. (This is needed right now since a `BufferVec` won't be created
     // if the data is empty!)
     buffer.push(T::default());
-    for (i, (primitive, entity)) in q_primitives.iter().enumerate() {
+    for (i, (primitive, entity, existing_index)) in
+        q_primitives.iter().enumerate()
+    {
         buffer.push(primitive.clone());
-        commands
-            .entity(entity)
-            .insert((*ty, PrimitiveIndex(i as u32)));
+        // Only insert PrimitiveIndex when it actually changed.
+        if existing_index.map(|idx: &PrimitiveIndex| idx.0)
+            != Some(i as u32)
+        {
+            commands
+                .entity(entity)
+                .insert((*ty, PrimitiveIndex(i as u32)));
+        }
     }
 
-    buffer.write_buffer(&render_device, &render_queue);
+    buffer.write_buffer(&render.device, &render.queue);
 }
 
 fn init_sdf_buffers(mut commands: Commands) {
@@ -363,6 +595,7 @@ fn init_sdf_buffers(mut commands: Commands) {
         round_cuboid_buffer,
         capsule_buffer,
         torus_buffer,
+        input_count: 0,
     });
 }
 
@@ -486,8 +719,12 @@ struct SdfInput {
     pub scale: f32,
     pub primitive_type: u32,
     pub primitive_index: u32,
-    pub group_id: u32,
+    /// Boolean op this record applies to its parent's accumulator.
     pub boolean_op: u32,
+    /// Buffer index of this record's parent group header.
+    pub parent_index: u32,
+    /// `1` if this record is a group header; `0` if it is a leaf primitive.
+    pub has_children: u32,
 }
 
 impl SdfInput {
@@ -495,8 +732,8 @@ impl SdfInput {
         global_transform: &SdfGlobalTransform,
         ty: &PrimitiveType,
         index: &PrimitiveIndex,
-        group_id: u32,
         boolean_op: u32,
+        parent_index: u32,
     ) -> Self {
         Self {
             local_from_world: Affine3::from(
@@ -508,8 +745,9 @@ impl SdfInput {
             // Index 0 is for default value.
             // TODO: We could cache only primitives with different settings?
             primitive_index: index.0 + 1,
-            group_id,
             boolean_op,
+            parent_index,
+            has_children: 0,
         }
     }
 }

@@ -11,8 +11,12 @@ struct SdfInput {
     scale: f32,
     primitive_type: u32,
     primitive_index: u32,
-    group_id: u32,
+    // Op this record applies to its parent's accumulator.
     boolean_op: u32,
+    // Buffer index of the parent group header. 0xFFFFFFFF = scene root.
+    parent_index: u32,
+    // 1 = group header record; 0 = leaf primitive record.
+    has_children: u32,
 };
 
 struct SdfSphere {
@@ -50,6 +54,9 @@ const OP_UNION: u32 = 0u;
 const OP_DIFFERENCE: u32 = 1u;
 const OP_INTERSECTION: u32 = 2u;
 const OP_EXCLUSION: u32 = 3u;
+
+// Maximum nesting depth of groups within groups.
+const MAX_STACK_DEPTH: u32 = 8u;
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var texture_sampler: sampler;
@@ -99,75 +106,92 @@ fn apply_op(op: u32, acc: f32, d: f32) -> f32 {
     }
 }
 
+// Evaluate the raw SDF distance for a single input at world-space `point`.
+fn eval_primitive(input: SdfInput, point: vec3f) -> f32 {
+    let sample_point = (vec4f(point, 1.0) * input.local_from_world).xyz;
+    var d = sdf_camera.far_plane;
+    switch input.primitive_type {
+        default { }
+        case SPHERE {
+            d = sd_sphere(sample_point, spheres[input.primitive_index].radius);
+        }
+        case CUBOID {
+            d = sd_cuboid(sample_point, cuboids[input.primitive_index].extents);
+        }
+        case ROUND_CUBOID {
+            let rc = round_cuboids[input.primitive_index];
+            d = sd_round_cuboid(sample_point, rc.extents, rc.radius);
+        }
+        case CAPSULE {
+            let cap = capsules[input.primitive_index];
+            d = sd_capsule(sample_point, cap.point_a, cap.point_b, cap.radius);
+        }
+        case TORUS {
+            let tor = toruses[input.primitive_index];
+            d = sd_torus(sample_point, vec2f(tor.ring_radius, tor.tube_radius));
+        }
+    }
+    return d * input.scale;
+}
+
 /// Scene composition.
 fn composition(point: vec3f) -> f32 {
     let len = arrayLength(&inputs);
-    var dist = sdf_camera.far_plane;
 
-    // TODO: Implement acceleration structure (BVH?) to prevent looping over
-    // the entire transform buffer.
-    // TODO: Support different SDF primitives.
-    var acc          = sdf_camera.far_plane;
-    var active_group = 0u;
+    // Per-stack-entry state. 
+    // Buffer position of the group header that opened this frame.
+    var stack_dfs_index: array<u32, MAX_STACK_DEPTH>;
+    // Value of current_dist before this group was pushed.
+    var stack_saved_dist: array<f32, MAX_STACK_DEPTH>;
+    // Op to apply when folding this group into its parent.
+    var stack_boolean_op: array<u32, MAX_STACK_DEPTH>;
+    var stack_top: i32 = -1;
+
+    // Accumulates the running SDF result for the active scope.
+    // At the end it holds the final scene distance.
+    var current_dist = sdf_camera.far_plane;
 
     for (var i = 0u; i < len; i++) {
         let input = inputs[i];
-        let sample_point = ((vec4f(point, 1.0) * input.local_from_world).xyz) / input.scale;
 
-        var sdf_dist = sdf_camera.far_plane;
-        switch input.primitive_type {
-            default { }
-            case SPHERE {
-                let radius = spheres[input.primitive_index].radius;
-                sdf_dist = sd_sphere(sample_point, radius);
-            }
-            case CUBOID {
-                let extents = cuboids[input.primitive_index].extents;
-                sdf_dist = sd_cuboid(sample_point, extents);
-            }
-            case ROUND_CUBOID {
-                let round_cuboid = round_cuboids[input.primitive_index];
-                sdf_dist = sd_round_cuboid(sample_point, round_cuboid.extents, round_cuboid.radius);
-            }
-            case CAPSULE {
-                let capsule = capsules[input.primitive_index];
-                sdf_dist = sd_capsule(sample_point, capsule.point_a, capsule.point_b, capsule.radius);
-            }
-            case TORUS {
-                let torus = toruses[input.primitive_index];
-                let t = vec2f(torus.ring_radius, torus.tube_radius);
-                sdf_dist = sd_torus(sample_point, t);
-            }
-        };
+        // Drain closed groups before processing this record.
+        // A group is closed when the incoming record belongs to a shallower ancestor.
+        loop {
+            if stack_top < 0 { break; }
+            if stack_dfs_index[stack_top] == input.parent_index { break; }
+            let saved = stack_saved_dist[stack_top];
+            let op = stack_boolean_op[stack_top];
+            stack_top -= 1;
+            current_dist = apply_op(op, saved, current_dist);
+        }
 
-        let d = sdf_dist * input.scale;
-
-        if input.group_id == 0u {
-            // Ungrouped, commit any open group, then union into scene.
-            if active_group != 0u {
-                dist = min(dist, acc);
-                active_group = 0u;
+        if input.has_children == 1u {
+            // Group header, open a new scope.
+            // Save the parent scope's running distance, reset for this group.
+            if stack_top < i32(MAX_STACK_DEPTH) - 1 {
+                stack_top += 1;
+                stack_dfs_index[stack_top]  = i;
+                stack_saved_dist[stack_top] = current_dist;
+                stack_boolean_op[stack_top] = input.boolean_op;
+                current_dist = sdf_camera.far_plane;
             }
-            dist = min(dist, d);
-        } else if input.group_id != active_group {
-            // New group, commit previous group if open, reset accumulator.
-            if active_group != 0u {
-                dist = min(dist, acc);
-            }
-            acc = d;
-            active_group = input.group_id;
+            // If the stack is full, skip this group.
         } else {
-            // Same group, apply the declared boolean operation.
-            acc = apply_op(input.boolean_op, acc, d);
+            // Leaf primitive, evaluate and fold into current scope.
+            let d = eval_primitive(input, point);
+            current_dist = apply_op(input.boolean_op, current_dist, d);
         }
     }
 
-    // Commit the last open group.
-    if active_group != 0u {
-        dist = min(dist, acc);
+    // Drain any remaining open groups.
+    while stack_top >= 0 {
+        let saved = stack_saved_dist[stack_top];
+        let op    = stack_boolean_op[stack_top];
+        stack_top -= 1;
+        current_dist = apply_op(op, saved, current_dist);
     }
 
-    return dist;
+    return current_dist;
 }
 
 /// Calculate surface normal via gradient.
