@@ -115,10 +115,9 @@ fn setup(
     let curves: Vec<BezierCurve> = points
         .iter()
         .enumerate()
-        .map(|(i, p)| {
-            BezierCurve::new(p[0], p[1], p[2], p[3])
-                .with_color(CURVE_COLORS[i])
-                .with_width(CURVE_WIDTH)
+        .flat_map(|(i, p)| {
+            BezierCurve::cubic(p[0], p[1], p[2], p[3])
+                .map(|c| c.with_color(CURVE_COLORS[i]).with_width(CURVE_WIDTH))
         })
         .collect();
 
@@ -182,10 +181,9 @@ fn wander_control_points(
     let curves: Vec<BezierCurve> = points
         .iter()
         .enumerate()
-        .map(|(i, p)| {
-            BezierCurve::new(p[0], p[1], p[2], p[3])
-                .with_color(CURVE_COLORS[i])
-                .with_width(CURVE_WIDTH)
+        .flat_map(|(i, p)| {
+            BezierCurve::cubic(p[0], p[1], p[2], p[3])
+                .map(|c| c.with_color(CURVE_COLORS[i]).with_width(CURVE_WIDTH))
             // .with_debug(true)
         })
         .collect();

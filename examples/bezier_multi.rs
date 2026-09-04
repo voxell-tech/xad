@@ -37,24 +37,31 @@ fn setup(
 
     let mat_left = materials.add(BezierMaterial::from_curves(
         LinearRgba::new(0.05, 0.04, 0.10, 1.0),
-        vec![
-            BezierCurve::new(
+        [
+            BezierCurve::cubic(
                 Vec2::new(0.10, 0.20),
                 Vec2::new(0.40, 0.90),
                 Vec2::new(0.60, 0.10),
                 Vec2::new(0.90, 0.80),
             )
-            .with_color(LinearRgba::new(1.00, 0.30, 0.30, 1.0))
-            .with_width(0.001),
-            BezierCurve::new(
+            .map(|c| {
+                c.with_color(LinearRgba::new(1.00, 0.30, 0.30, 1.0))
+                    .with_width(0.001)
+            }),
+            BezierCurve::cubic(
                 Vec2::new(0.10, 0.85),
                 Vec2::new(0.35, 0.65),
                 Vec2::new(0.65, 0.35),
                 Vec2::new(0.90, 0.15),
             )
-            .with_color(LinearRgba::new(1.00, 0.85, 0.10, 1.0))
-            .with_width(0.001),
-        ],
+            .map(|c| {
+                c.with_color(LinearRgba::new(1.00, 0.85, 0.10, 1.0))
+                    .with_width(0.001)
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
         &mut storage_buffers,
     ));
     commands.spawn((
@@ -69,32 +76,41 @@ fn setup(
 
     let mat_bottom = materials.add(BezierMaterial::from_curves(
         LinearRgba::new(0.04, 0.10, 0.06, 1.0),
-        vec![
-            BezierCurve::new(
+        [
+            BezierCurve::cubic(
                 Vec2::new(0.10, 0.50),
                 Vec2::new(0.30, 0.95),
                 Vec2::new(0.70, 0.95),
                 Vec2::new(0.90, 0.50),
             )
-            .with_color(LinearRgba::new(0.30, 1.00, 0.45, 1.0))
-            .with_width(0.016),
-            BezierCurve::new(
+            .map(|c| {
+                c.with_color(LinearRgba::new(0.30, 1.00, 0.45, 1.0))
+                    .with_width(0.016)
+            }),
+            BezierCurve::cubic(
                 Vec2::new(0.05, 0.50),
                 Vec2::new(0.30, 0.10),
                 Vec2::new(0.70, 0.90),
                 Vec2::new(0.95, 0.50),
             )
-            .with_color(LinearRgba::new(0.20, 0.80, 1.00, 1.0))
-            .with_width(0.011),
-            BezierCurve::new(
+            .map(|c| {
+                c.with_color(LinearRgba::new(0.20, 0.80, 1.00, 1.0))
+                    .with_width(0.011)
+            }),
+            BezierCurve::cubic(
                 Vec2::new(0.10, 0.15),
                 Vec2::new(0.40, 0.50),
                 Vec2::new(0.60, 0.50),
                 Vec2::new(0.90, 0.15),
             )
-            .with_color(LinearRgba::new(0.90, 0.40, 1.00, 1.0))
-            .with_width(0.011),
-        ],
+            .map(|c| {
+                c.with_color(LinearRgba::new(0.90, 0.40, 1.00, 1.0))
+                    .with_width(0.011)
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
         &mut storage_buffers,
     ));
     commands.spawn((
@@ -109,24 +125,31 @@ fn setup(
 
     let mat_right = materials.add(BezierMaterial::from_curves(
         LinearRgba::new(0.10, 0.06, 0.04, 1.0),
-        vec![
-            BezierCurve::new(
+        [
+            BezierCurve::cubic(
                 Vec2::new(0.10, 0.10),
                 Vec2::new(0.90, 0.10),
                 Vec2::new(0.10, 0.90),
                 Vec2::new(0.90, 0.90),
             )
-            .with_color(LinearRgba::new(1.00, 0.55, 0.10, 1.0))
-            .with_width(0.016),
-            BezierCurve::new(
+            .map(|c| {
+                c.with_color(LinearRgba::new(1.00, 0.55, 0.10, 1.0))
+                    .with_width(0.016)
+            }),
+            BezierCurve::cubic(
                 Vec2::new(0.10, 0.90),
                 Vec2::new(0.90, 0.90),
                 Vec2::new(0.10, 0.10),
                 Vec2::new(0.90, 0.10),
             )
-            .with_color(LinearRgba::new(1.00, 1.00, 1.00, 0.65))
-            .with_width(0.009),
-        ],
+            .map(|c| {
+                c.with_color(LinearRgba::new(1.00, 1.00, 1.00, 0.65))
+                    .with_width(0.009)
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
         &mut storage_buffers,
     ));
     commands.spawn((

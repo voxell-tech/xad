@@ -5,7 +5,6 @@ use bevy::render::storage::ShaderStorageBuffer;
 use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
 use xad::sketch::color::gen_color;
 use xad::sketch::features::circle::circle;
-use xad::sketch::features::line::line as feature_line;
 use xad::sketch::features::polygon::polygon as feature_polygon;
 use xad::sketch::features::square::square as feature_square;
 
@@ -19,13 +18,6 @@ fn main() {
 const HALF_EXTENT: f32 = 1.0;
 const LINE_WIDTH: f32 = 0.005;
 const ENDPOINT_RADIUS: f32 = 0.015;
-
-// Wraps the shared `line` helper with this example's endpoint-dot styling.
-fn line(a: Vec2, b: Vec2, color: LinearRgba) -> BezierCurve {
-    feature_line(a, b, color, LINE_WIDTH)
-        .with_draw_endpoints(true)
-        .with_endpoint_radius(ENDPOINT_RADIUS)
-}
 
 fn square(color: LinearRgba) -> Vec<BezierCurve> {
     feature_square(Vec2::splat(0.5), 0.6, color, LINE_WIDTH)
@@ -56,28 +48,29 @@ fn hexagon(color: LinearRgba) -> Vec<BezierCurve> {
 fn heart(color: LinearRgba) -> Vec<BezierCurve> {
     let tip = Vec2::new(0.5, 0.85);
     let notch = Vec2::new(0.5, 0.4);
-    vec![
-        BezierCurve::new(
+    [
+        BezierCurve::cubic(
             tip,
             Vec2::new(0.05, 0.7),
             Vec2::new(0.05, 0.25),
             notch,
-        )
-        .with_color(color)
-        .with_width(LINE_WIDTH)
-        .with_draw_endpoints(true)
-        .with_endpoint_radius(0.015),
-        BezierCurve::new(
+        ),
+        BezierCurve::cubic(
             tip,
             Vec2::new(0.95, 0.7),
             Vec2::new(0.95, 0.25),
             notch,
-        )
-        .with_color(color)
-        .with_width(LINE_WIDTH)
-        .with_draw_endpoints(true)
-        .with_endpoint_radius(0.015),
+        ),
     ]
+    .into_iter()
+    .flatten()
+    .map(|c| {
+        c.with_color(color)
+            .with_width(LINE_WIDTH)
+            .with_draw_endpoints(true)
+            .with_endpoint_radius(0.015)
+    })
+    .collect()
 }
 
 fn setup(

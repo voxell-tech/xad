@@ -29,26 +29,33 @@ fn setup(
 
     let material = materials.add(BezierMaterial::from_curves(
         LinearRgba::new(0.06, 0.06, 0.10, 1.0),
-        vec![
+        [
             // Orange S-curve
-            BezierCurve::new(
+            BezierCurve::cubic(
                 Vec2::new(0.10, 0.20),
                 Vec2::new(0.40, 0.90),
                 Vec2::new(0.60, 0.10),
                 Vec2::new(0.90, 0.80),
             )
-            .with_color(LinearRgba::new(1.00, 0.45, 0.10, 1.0))
-            .with_width(0.005),
+            .map(|c| {
+                c.with_color(LinearRgba::new(1.00, 0.45, 0.10, 1.0))
+                    .with_width(0.005)
+            }),
             // Cyan arch
-            BezierCurve::new(
+            BezierCurve::cubic(
                 Vec2::new(0.10, 0.50),
                 Vec2::new(0.35, 0.95),
                 Vec2::new(0.65, 0.95),
                 Vec2::new(0.90, 0.50),
             )
-            .with_color(LinearRgba::new(0.20, 0.80, 1.00, 1.0))
-            .with_width(0.005),
-        ],
+            .map(|c| {
+                c.with_color(LinearRgba::new(0.20, 0.80, 1.00, 1.0))
+                    .with_width(0.005)
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
         &mut storage_buffers,
     ));
 
