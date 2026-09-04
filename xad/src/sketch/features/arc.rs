@@ -20,7 +20,7 @@ pub fn arc(
     let segment_sweep = sweep / segment_count as f32;
 
     (0..segment_count)
-        .map(|i| {
+        .flat_map(|i| {
             let a0 = start_angle + segment_sweep * i as f32;
             let a1 = a0 + segment_sweep;
             arc_segment(center, radius, a0, a1, color, stroke_width)
@@ -35,14 +35,13 @@ fn arc_segment(
     a1: f32,
     color: LinearRgba,
     stroke_width: f32,
-) -> BezierCurve {
+) -> [BezierCurve; 2] {
     let p0 = center + radius * Vec2::new(a0.cos(), a0.sin());
     let p3 = center + radius * Vec2::new(a1.cos(), a1.sin());
     let handle = (4.0 / 3.0) * ((a1 - a0) / 4.0).tan() * radius;
     let p1 = p0 + handle * Vec2::new(-a0.sin(), a0.cos());
     let p2 = p3 - handle * Vec2::new(-a1.sin(), a1.cos());
 
-    BezierCurve::new(p0, p1, p2, p3)
-        .with_color(color)
-        .with_width(stroke_width)
+    BezierCurve::cubic(p0, p1, p2, p3)
+        .map(|c| c.with_color(color).with_width(stroke_width))
 }
