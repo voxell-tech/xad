@@ -3,10 +3,10 @@ use command_system::{
     Feature, FeatureContext, FeatureError, FeatureId, FeatureKind,
     FeatureOutput,
 };
+use sketch::features::circle::CircleProfile;
 
 use crate::sdf::primitves::SdfCuboid;
 use crate::sdf::transform::SdfTransform;
-use crate::sketch::features::circle::CircleProfile;
 
 // super rough prototype for demo purposes
 // TODO: apply for all shapes, with basic loft

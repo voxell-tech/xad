@@ -14,8 +14,70 @@ impl Plugin for BezierPlugin {
 // TODO: allow appending to the gpu buffer
 // to edit existing curves, we need to maintain a cpu-side copy,
 // and after any edits, resend the entire thing to the gpu
-#[derive(Component, Debug, Clone, Default)]
-pub struct SketchCurves(pub Vec<BezierCurve>);
+//
+// owns the sketch's curve list and the material it's drawn with,
+// so the two can never drift out of sync
+#[derive(Component, Debug, Clone)]
+pub struct SketchCurves {
+    pub curves: Vec<BezierCurve>,
+    pub material: Handle<BezierMaterial>,
+}
+
+impl SketchCurves {
+    // creates the sketch's initial, curve-less backing material
+    pub fn new(world: &mut World, background: LinearRgba) -> Self {
+        let material = {
+            let mut storage_buffers =
+                world.resource_mut::<Assets<ShaderStorageBuffer>>();
+            BezierMaterial::from_curves(
+                background,
+                Vec::new(),
+                &mut storage_buffers,
+            )
+        };
+        let material =
+            world.resource_mut::<Assets<BezierMaterial>>().add(material);
+        Self {
+            curves: Vec::new(),
+            material,
+        }
+    }
+
+    // appends curves onto the sketch entity and re-uploads the full curve
+    // list to its material. returns None if `entity` has no SketchCurves.
+    pub fn add_curves(
+        world: &mut World,
+        entity: Entity,
+        background: LinearRgba,
+        curves: impl IntoIterator<Item = BezierCurve>,
+    ) -> Option<Vec<BezierCurve>> {
+        let (all_curves, material_handle) = {
+            let mut sketch_curves =
+                world.get_mut::<SketchCurves>(entity)?;
+            sketch_curves.curves.extend(curves);
+            (
+                sketch_curves.curves.clone(),
+                sketch_curves.material.clone(),
+            )
+        };
+
+        let material = world
+            .resource::<Assets<BezierMaterial>>()
+            .get(&material_handle)
+            .cloned();
+        if let Some(material) = material {
+            let mut storage_buffers =
+                world.resource_mut::<Assets<ShaderStorageBuffer>>();
+            material.update_curves(
+                background,
+                &all_curves,
+                &mut storage_buffers,
+            );
+        }
+
+        Some(all_curves)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, ShaderType)]
 pub struct BezierCurve {

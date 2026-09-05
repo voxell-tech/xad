@@ -1,0 +1,12 @@
+[package]
+name = "sketch"
+description = "Definitions and an abstraction layer onto Bezier curves"
+
+repository.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+bevy = { version = "0.18.0", default-features = false, features = ["3d", "file_watcher"] }
+bezier = { path = "../bezier" }
+command-system = { path = "../commands" }

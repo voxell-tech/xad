@@ -1634,6 +1634,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bezier"
+version = "0.1.0"
+dependencies = [
+ "bevy_color",
+ "bevy_math",
+ "encase",
+ "rand",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4636,6 +4646,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
+name = "sketch"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bezier",
+ "command-system",
+]
+
+[[package]]
 name = "skrifa"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6241,8 +6260,11 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_egui",
+ "bezier",
  "command-system",
+ "encase",
  "rand",
+ "sketch",
 ]
 
 [[package]]

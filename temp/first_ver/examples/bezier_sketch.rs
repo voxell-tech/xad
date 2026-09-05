@@ -2,15 +2,19 @@
 
 use bevy::prelude::*;
 use bevy::render::storage::ShaderStorageBuffer;
-use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
-use xad::sketch::color::gen_color;
-use xad::sketch::features::circle::circle;
-use xad::sketch::features::polygon::polygon as feature_polygon;
-use xad::sketch::features::square::square as feature_square;
+use bezier::BezierCurve;
+use bezier::gen_color;
+use bezier::shapes::circle::circle;
+use bezier::shapes::polygon::polygon as feature_polygon;
+use bezier::shapes::square::square as feature_square;
+use sketch::Sketch;
+use xad::material::{
+    BezierMaterial, BezierMaterialPlugin, construct_bezier_material,
+};
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, BezierPlugin))
+        .add_plugins((DefaultPlugins, BezierMaterialPlugin))
         .add_systems(Startup, setup)
         .run();
 }
@@ -89,7 +93,7 @@ fn setup(
     let mesh =
         meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(HALF_EXTENT)));
 
-    let shapes = [
+    let sketches = [
         (Vec3::new(-3.75, 0.0, 0.0), square(gen_color())),
         (Vec3::new(-1.25, 0.0, 0.0), hexagon(gen_color())),
         (Vec3::new(1.25, 0.0, 0.0), heart(gen_color())),
@@ -103,18 +107,22 @@ fn setup(
                 })
                 .collect(),
         ),
-    ];
+    ]
+    .map(|(position, curves)| Sketch {
+        curves,
+        position,
+        background_color: background,
+    });
 
-    for (translation, curves) in shapes {
-        let material = materials.add(BezierMaterial::from_curves(
-            background,
-            curves,
+    for sketch in sketches {
+        let material = materials.add(construct_bezier_material(
+            &sketch,
             &mut storage_buffers,
         ));
         commands.spawn((
             Mesh3d(mesh.clone()),
             MeshMaterial3d(material),
-            Transform::from_translation(translation),
+            Transform::from_translation(sketch.position),
         ));
     }
 }

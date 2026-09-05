@@ -5,11 +5,15 @@
 
 use bevy::prelude::*;
 use bevy::render::storage::ShaderStorageBuffer;
-use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
+use bezier::BezierCurve;
+use sketch::Sketch;
+use xad::material::{
+    BezierMaterial, BezierMaterialPlugin, construct_bezier_material,
+};
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, BezierPlugin))
+        .add_plugins((DefaultPlugins, BezierMaterialPlugin))
         .add_systems(Startup, setup)
         .run();
 }
@@ -27,9 +31,8 @@ fn setup(
             .looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    let material = materials.add(BezierMaterial::from_curves(
-        LinearRgba::new(0.06, 0.06, 0.10, 1.0),
-        [
+    let sketch = Sketch {
+        curves: [
             // Orange S-curve
             BezierCurve::cubic(
                 Vec2::new(0.10, 0.20),
@@ -56,11 +59,18 @@ fn setup(
         .into_iter()
         .flatten()
         .collect(),
+        position: Vec3::ZERO,
+        background_color: LinearRgba::new(0.06, 0.06, 0.10, 1.0),
+    };
+
+    let material = materials.add(construct_bezier_material(
+        &sketch,
         &mut storage_buffers,
     ));
 
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(2.5)))),
         MeshMaterial3d(material),
+        Transform::from_translation(sketch.position),
     ));
 }

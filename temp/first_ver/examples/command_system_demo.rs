@@ -3,12 +3,13 @@
 
 use bevy::prelude::*;
 use command_system::FeatureTimeline;
+use sketch::Plane;
+use sketch::features::CreateSketch;
+use sketch::features::circle::CreateCircle;
 use xad::XadPlugin;
 use xad::sdf::SdfCamera;
 use xad::sdf::boolean::BooleanSubtract;
 use xad::sdf::extrude::BlindExtrude;
-use xad::sketch::features::circle::CreateCircle;
-use xad::sketch::{CreateSketch, Plane};
 
 fn main() {
     let mut app = App::new();
@@ -64,8 +65,7 @@ fn run_timeline(world: &mut World) {
         .regen(world)
         .expect("feature timeline regen failed");
 
-    let sketches =
-        timeline.sketch_registry::<xad::sketch::SketchData>();
+    let sketches = timeline.sketch_registry::<sketch::SketchData>();
     info!("sketches in timeline: {}", sketches.len());
 
     world.flush();

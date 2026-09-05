@@ -5,11 +5,15 @@
 
 use bevy::prelude::*;
 use bevy::render::storage::ShaderStorageBuffer;
-use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
+use bezier::BezierCurve;
+use sketch::Sketch;
+use xad::material::{
+    BezierMaterial, BezierMaterialPlugin, construct_bezier_material,
+};
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, BezierPlugin))
+        .add_plugins((DefaultPlugins, BezierMaterialPlugin))
         .add_systems(Startup, setup)
         .run();
 }
@@ -28,16 +32,8 @@ fn setup(
             .looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    let mesh_left =
-        meshes.add(Plane3d::new(Vec3::X, Vec2::splat(HALF_EXTENT)));
-    let mesh_bottom =
-        meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(HALF_EXTENT)));
-    let mesh_right = meshes
-        .add(Plane3d::new(Vec3::NEG_X, Vec2::splat(HALF_EXTENT)));
-
-    let mat_left = materials.add(BezierMaterial::from_curves(
-        LinearRgba::new(0.05, 0.04, 0.10, 1.0),
-        [
+    let left = Sketch {
+        curves: [
             BezierCurve::cubic(
                 Vec2::new(0.10, 0.20),
                 Vec2::new(0.40, 0.90),
@@ -62,21 +58,21 @@ fn setup(
         .into_iter()
         .flatten()
         .collect(),
-        &mut storage_buffers,
-    ));
+        position: Vec3::new(-HALF_EXTENT, 0.0, 0.0),
+        background_color: LinearRgba::new(0.05, 0.04, 0.10, 1.0),
+    };
+    let mesh_left =
+        meshes.add(Plane3d::new(Vec3::X, Vec2::splat(HALF_EXTENT)));
+    let mat_left = materials
+        .add(construct_bezier_material(&left, &mut storage_buffers));
     commands.spawn((
         Mesh3d(mesh_left),
         MeshMaterial3d(mat_left),
-        Transform::from_translation(Vec3::new(
-            -HALF_EXTENT,
-            0.0,
-            0.0,
-        )),
+        Transform::from_translation(left.position),
     ));
 
-    let mat_bottom = materials.add(BezierMaterial::from_curves(
-        LinearRgba::new(0.04, 0.10, 0.06, 1.0),
-        [
+    let bottom = Sketch {
+        curves: [
             BezierCurve::cubic(
                 Vec2::new(0.10, 0.50),
                 Vec2::new(0.30, 0.95),
@@ -111,21 +107,23 @@ fn setup(
         .into_iter()
         .flatten()
         .collect(),
+        position: Vec3::new(0.0, -HALF_EXTENT, 0.0),
+        background_color: LinearRgba::new(0.04, 0.10, 0.06, 1.0),
+    };
+    let mesh_bottom =
+        meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(HALF_EXTENT)));
+    let mat_bottom = materials.add(construct_bezier_material(
+        &bottom,
         &mut storage_buffers,
     ));
     commands.spawn((
         Mesh3d(mesh_bottom),
         MeshMaterial3d(mat_bottom),
-        Transform::from_translation(Vec3::new(
-            0.0,
-            -HALF_EXTENT,
-            0.0,
-        )),
+        Transform::from_translation(bottom.position),
     ));
 
-    let mat_right = materials.add(BezierMaterial::from_curves(
-        LinearRgba::new(0.10, 0.06, 0.04, 1.0),
-        [
+    let right = Sketch {
+        curves: [
             BezierCurve::cubic(
                 Vec2::new(0.10, 0.10),
                 Vec2::new(0.90, 0.10),
@@ -150,11 +148,16 @@ fn setup(
         .into_iter()
         .flatten()
         .collect(),
-        &mut storage_buffers,
-    ));
+        position: Vec3::new(HALF_EXTENT, 0.0, 0.0),
+        background_color: LinearRgba::new(0.10, 0.06, 0.04, 1.0),
+    };
+    let mesh_right = meshes
+        .add(Plane3d::new(Vec3::NEG_X, Vec2::splat(HALF_EXTENT)));
+    let mat_right = materials
+        .add(construct_bezier_material(&right, &mut storage_buffers));
     commands.spawn((
         Mesh3d(mesh_right),
         MeshMaterial3d(mat_right),
-        Transform::from_translation(Vec3::new(HALF_EXTENT, 0.0, 0.0)),
+        Transform::from_translation(right.position),
     ));
 }
