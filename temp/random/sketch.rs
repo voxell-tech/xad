@@ -2,12 +2,11 @@ pub mod color;
 pub mod features;
 
 use bevy::prelude::*;
-use bevy::render::storage::ShaderStorageBuffer;
 use command_system::{
     Feature, FeatureContext, FeatureError, FeatureKind, FeatureOutput,
 };
 
-use crate::bezier::{BezierMaterial, SketchCurves};
+use crate::bezier::SketchCurves;
 
 const SKETCH_HALF_EXTENT: f32 = 1.0;
 pub(crate) const SKETCH_BACKGROUND: LinearRgba =
@@ -41,7 +40,6 @@ impl Plane {
 #[derive(Debug, Clone)]
 pub struct SketchData {
     pub plane: Plane,
-    pub material: Handle<BezierMaterial>,
     pub entity: Entity,
 }
 
@@ -69,25 +67,15 @@ impl Feature<World> for CreateSketch {
                 Vec2::splat(SKETCH_HALF_EXTENT),
             ));
 
-        let bezier_material = {
-            let mut storage_buffers =
-                world.resource_mut::<Assets<ShaderStorageBuffer>>();
-            BezierMaterial::from_curves(
-                SKETCH_BACKGROUND,
-                Vec::new(),
-                &mut storage_buffers,
-            )
-        };
-        let material = world
-            .resource_mut::<Assets<BezierMaterial>>()
-            .add(bezier_material);
+        let sketch_curves = SketchCurves::new(world, SKETCH_BACKGROUND);
+        let material = sketch_curves.material.clone();
 
         let entity = world
             .spawn((
                 Mesh3d(mesh),
-                MeshMaterial3d(material.clone()),
+                MeshMaterial3d(material),
                 Transform::default(),
-                SketchCurves::default(),
+                sketch_curves,
             ))
             .id();
 
@@ -95,9 +83,9 @@ impl Feature<World> for CreateSketch {
             Sketch {
                 plane: SketchData {
                     plane: self.plane,
-                    material,
                     entity,
                 },
+                elements: Vec::new(),
             },
             move |world: &mut World| {
                 if world.get_entity(entity).is_ok() {

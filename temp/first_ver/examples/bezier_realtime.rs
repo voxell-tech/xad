@@ -5,7 +5,11 @@
 
 use bevy::prelude::*;
 use bevy::render::storage::ShaderStorageBuffer;
-use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
+use bezier::BezierCurve;
+use sketch::Sketch;
+use xad::material::{
+    BezierMaterial, BezierMaterialPlugin, construct_bezier_material,
+};
 
 const CURVE_COLORS: [LinearRgba; 3] = [
     LinearRgba::new(1.00, 0.45, 0.10, 1.0),
@@ -20,7 +24,7 @@ const ACCEL: f32 = 0.6;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, BezierPlugin))
+        .add_plugins((DefaultPlugins, BezierMaterialPlugin))
         .add_systems(Startup, setup)
         .add_systems(Update, wander_control_points)
         .run();
@@ -116,14 +120,19 @@ fn setup(
         .iter()
         .enumerate()
         .flat_map(|(i, p)| {
-            BezierCurve::cubic(p[0], p[1], p[2], p[3])
-                .map(|c| c.with_color(CURVE_COLORS[i]).with_width(CURVE_WIDTH))
+            BezierCurve::cubic(p[0], p[1], p[2], p[3]).map(|c| {
+                c.with_color(CURVE_COLORS[i]).with_width(CURVE_WIDTH)
+            })
         })
         .collect();
 
-    let material = materials.add(BezierMaterial::from_curves(
-        background,
+    let sketch = Sketch {
         curves,
+        position: Vec3::ZERO,
+        background_color: background,
+    };
+    let material = materials.add(construct_bezier_material(
+        &sketch,
         &mut storage_buffers,
     ));
 
@@ -182,8 +191,9 @@ fn wander_control_points(
         .iter()
         .enumerate()
         .flat_map(|(i, p)| {
-            BezierCurve::cubic(p[0], p[1], p[2], p[3])
-                .map(|c| c.with_color(CURVE_COLORS[i]).with_width(CURVE_WIDTH))
+            BezierCurve::cubic(p[0], p[1], p[2], p[3]).map(|c| {
+                c.with_color(CURVE_COLORS[i]).with_width(CURVE_WIDTH)
+            })
             // .with_debug(true)
         })
         .collect();

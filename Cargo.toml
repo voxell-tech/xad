@@ -1,7 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
+    "bezier",
     "commands",
+    "sketch",
     "xad"
 ]
 

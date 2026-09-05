@@ -1,13 +1,12 @@
 use std::f32::consts::TAU;
 
 use bevy::prelude::*;
-use bevy::render::storage::ShaderStorageBuffer;
 use command_system::{
     Feature, FeatureContext, FeatureError, FeatureId, FeatureKind,
     FeatureOutput, SketchId,
 };
 
-use crate::bezier::{BezierCurve, BezierMaterial, SketchCurves};
+use crate::bezier::{BezierCurve, SketchCurves};
 use crate::sketch::color::gen_color;
 use crate::sketch::features::arc::arc;
 use crate::sketch::{SKETCH_BACKGROUND, Sketch};
@@ -55,7 +54,6 @@ impl Feature<World> for CreateCircle {
         let sketch = ctx
             .get::<Sketch>(self.sketch)
             .ok_or(FeatureError::MissingDependency(self.sketch))?;
-        let material_handle = sketch.plane.material.clone();
         let entity = sketch.plane.entity;
 
         // this will most likely go away once we have a self-resizing bezier material
@@ -65,28 +63,8 @@ impl Feature<World> for CreateCircle {
 
         // TODO: optimise
         // this is expensive frfr
-        let all_curves = {
-            let mut sketch_curves =
-                world.get_mut::<SketchCurves>(entity).ok_or(
-                    FeatureError::MissingDependency(self.sketch),
-                )?;
-            sketch_curves.0.extend(curves);
-            sketch_curves.0.clone()
-        };
-
-        let bezier_material = world
-            .resource::<Assets<BezierMaterial>>()
-            .get(&material_handle)
-            .cloned();
-        if let Some(bezier_material) = bezier_material {
-            let mut storage_buffers =
-                world.resource_mut::<Assets<ShaderStorageBuffer>>();
-            bezier_material.update_curves(
-                SKETCH_BACKGROUND,
-                &all_curves,
-                &mut storage_buffers,
-            );
-        }
+        SketchCurves::add_curves(world, entity, SKETCH_BACKGROUND, curves)
+            .ok_or(FeatureError::MissingDependency(self.sketch))?;
 
         Ok(FeatureOutput::new(CircleProfile {
             pos: self.pos,
