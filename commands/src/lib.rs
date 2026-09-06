@@ -12,6 +12,8 @@ pub enum FeatureType {
 pub trait Feature<W, E> {
     fn kind(&self) -> FeatureType;
 
+    // TODO: create a dependency check, and skip running `apply` if check fails
+
     // outputs: previously computed features, to resolve dependencies from
     fn apply(
         &self,

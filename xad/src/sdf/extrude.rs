@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use command_system::{
     Feature, FeatureId, FeatureOutput, FeatureType,
 };
-use sketch::features::Circle;
+use sketch::features::CircleComponent;
 
 use crate::sdf::primitves::SdfCuboid;
 use crate::sdf::transform::SdfTransform;
@@ -30,7 +30,7 @@ impl Feature<World, Entity> for BlindExtrude {
         let face_entity =
             outputs.get(&self.face).and_then(|o| o.value);
         let circle = face_entity
-            .and_then(|entity| world.get::<Circle>(entity))
+            .and_then(|entity| world.get::<CircleComponent>(entity))
             .copied();
 
         let value = circle.map(|circle| {

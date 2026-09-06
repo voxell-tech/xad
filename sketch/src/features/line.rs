@@ -13,18 +13,18 @@ use crate::Sketch;
 // preferably want these to be indenpendent of bevy
 #[allow(dead_code)]
 #[derive(Component, Clone, Copy)]
-pub struct CircleComponent {
-    pub position: Vec2,
-    pub radius: f32,
+pub struct LineComponent {
+    pub a: Vec2,
+    pub b: Vec2,
 }
 
-pub struct CreateCircle {
+pub struct CreateLine {
     pub sketch: FeatureId,
-    pub position: Vec2,
-    pub radius: f32,
+    pub a: Vec2,
+    pub b: Vec2,
 }
 
-impl Feature<World, Entity> for CreateCircle {
+impl Feature<World, Entity> for CreateLine {
     fn kind(&self) -> FeatureType {
         FeatureType::Sketch
     }
@@ -38,25 +38,25 @@ impl Feature<World, Entity> for CreateCircle {
             outputs.get(&self.sketch).and_then(|o| o.value);
 
         if let Some(sketch_entity) = sketch_entity {
-            let curves = bezier::shapes::circle::circle(
-                self.position,
-                self.radius,
+            let curve = bezier::shapes::line::line(
+                self.a,
+                self.b,
                 bezier::gen_color(),
                 0.01,
             );
             if let Some(mut sketch) =
                 world.get_mut::<Sketch>(sketch_entity)
             {
-                sketch.curves.extend(curves);
+                sketch.curves.push(curve);
             }
         }
 
         FeatureOutput {
             value: Some(
                 world
-                    .spawn(CircleComponent {
-                        position: self.position,
-                        radius: self.radius,
+                    .spawn(LineComponent {
+                        a: self.a,
+                        b: self.b,
                     })
                     .id(),
             ),
