@@ -1,20 +1,14 @@
 #import bevy_pbr::forward_io::VertexOutput
 
 struct BezierCurve {
-    // quadratic uses p0..p2
-    // cubic uses p0..p3
     p0:    vec2f,
     p1:    vec2f,
     p2:    vec2f,
-    p3:    vec2f,
     color: vec4f,
     width: f32,
-    // 0 = quadratic
-    // 1 = cubic
-    kind:  u32,
     // non-zero = draw control points
     debug: u32,
-    // non-zero = draw a dot at each endpoint
+    // non-zero = draw a dot at each endpoint (p0 and p2)
     draw_endpoints: u32,
     endpoint_radius: f32,
 }
@@ -22,6 +16,7 @@ struct BezierCurve {
 struct BezierBuffer {
     background_color:   vec4f,
     curve_count:        u32,
+    // TODO: recalculate padding for byte offset
     _padding:           array<f32, 3>,
     curves:             array<BezierCurve, 32>,
 }
@@ -122,26 +117,6 @@ fn sdf_bezier_quadratic(pos: vec2f, A: vec2f, B: vec2f, C: vec2f) -> f32 {
     return sign(sgn) * sqrt(res);
 }
 
-// Cubic curves are derived from the quadratic SDFs
-// split the cubic at the midpoint, and fit each half with a tangent-matched
-// quadratic and take the min
-fn sdf_bezier_cubic(pos: vec2f, p0: vec2f, p1: vec2f, p2: vec2f, p3: vec2f) -> f32 {
-    let m  = (p0 + 3.0 * p1 + 3.0 * p2 + p3) * 0.125;
-    let l1 = (p0 + p1) * 0.5;
-    let l2 = (p0 + 2.0 * p1 + p2) * 0.25;
-    let ql = (3.0 * (l1 + l2) - p0 - m) * 0.25;
-    let r1 = (p1 + 2.0 * p2 + p3) * 0.25;
-    let r2 = (p2 + p3) * 0.5;
-    let qr = (3.0 * (r1 + r2) - m - p3) * 0.25;
-
-    let d0 = sdf_bezier_quadratic(pos, p0, ql, m);
-    let d1 = sdf_bezier_quadratic(pos, m, qr, p3);
-    if (abs(d0) < abs(d1)) {
-        return d0;
-    }
-    return d1;
-}
-
 // DEBUG
 // hard-coded values, doesnt matter
 const DEBUG_POINT_RADIUS: f32 = 0.006;
@@ -168,15 +143,9 @@ fn draw_debug_overlay(color: vec3f, uv: vec2f, curve: BezierCurve) -> vec3f {
     var c = color;
     c = draw_debug_line(c, uv, curve.p0, curve.p1);
     c = draw_debug_line(c, uv, curve.p1, curve.p2);
-    if (curve.kind != 0u) {
-        c = draw_debug_line(c, uv, curve.p2, curve.p3);
-    }
     c = draw_debug_point(c, uv, curve.p0);
     c = draw_debug_point(c, uv, curve.p1);
     c = draw_debug_point(c, uv, curve.p2);
-    if (curve.kind != 0u) {
-        c = draw_debug_point(c, uv, curve.p3);
-    }
     return c;
 }
 // 
@@ -199,12 +168,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
 
     for (var i = 0u; i < data.curve_count; i++) {
         let curve = data.curves[i];
-        var d: f32;
-        if (curve.kind == 0u) {
-            d = abs(sdf_bezier_quadratic(uv, curve.p0, curve.p1, curve.p2));
-        } else {
-            d = abs(sdf_bezier_cubic(uv, curve.p0, curve.p1, curve.p2, curve.p3));
-        }
+        let d = abs(sdf_bezier_quadratic(uv, curve.p0, curve.p1, curve.p2));
         let aa   = fwidth(d);
         let mask = 1.0 - smoothstep(curve.width - aa, curve.width + aa, d);
         let coverage = mask * curve.color.a;
@@ -216,10 +180,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
         }
 
         if (curve.draw_endpoints != 0u) {
-            let last_point = select(curve.p2, curve.p3, curve.kind != 0u);
             var canvas = vec4f(color, alpha);
             canvas = draw_endpoint(canvas, uv, curve.p0, curve.endpoint_radius, curve.color);
-            canvas = draw_endpoint(canvas, uv, last_point, curve.endpoint_radius, curve.color);
+            canvas = draw_endpoint(canvas, uv, curve.p2, curve.endpoint_radius, curve.color);
             color = canvas.rgb;
             alpha = canvas.a;
         }

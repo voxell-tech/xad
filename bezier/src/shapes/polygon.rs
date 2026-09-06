@@ -1,7 +1,8 @@
-use bevy::color::LinearRgba;
-use bevy::math::Vec2;
+use bevy_color::LinearRgba;
+use bevy_math::Vec2;
 
-use crate::bezier::BezierCurve;
+use crate::BezierCurve;
+use crate::shapes::line::line;
 
 pub fn polygon(
     vertices: &[Vec2],
@@ -10,7 +11,7 @@ pub fn polygon(
 ) -> Vec<BezierCurve> {
     (0..vertices.len())
         .map(|i| {
-            crate::sketch::features::line::line(
+            line(
                 vertices[i],
                 vertices[(i + 1) % vertices.len()],
                 color,

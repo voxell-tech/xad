@@ -1,11 +1,12 @@
 //! Example: one plane whose Bezier control points wander randomly.
 //!
-//! Showcases updating a `BezierMaterial`'s GPU buffer every frame to animate
-//! curves in realtime, rather than baking them once at spawn time.
+//! The BezierMaterial updates in realtime, through its syncing function
+//! in the BezierMaterialPlugin
 
 use bevy::prelude::*;
-use bevy::render::storage::ShaderStorageBuffer;
-use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
+use bezier::BezierCurve;
+use sketch::{Plane, Sketch};
+use xad::material::BezierMaterialPlugin;
 
 const CURVE_COLORS: [LinearRgba; 3] = [
     LinearRgba::new(1.00, 0.45, 0.10, 1.0),
@@ -20,7 +21,7 @@ const ACCEL: f32 = 0.6;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, BezierPlugin))
+        .add_plugins((DefaultPlugins, BezierMaterialPlugin))
         .add_systems(Startup, setup)
         .add_systems(Update, wander_control_points)
         .run();
@@ -64,28 +65,31 @@ impl Rng {
     }
 }
 
-#[derive(Resource)]
-struct WanderingCurves {
-    material: Handle<BezierMaterial>,
-    background: LinearRgba,
+#[derive(Component)]
+struct WanderingPoints {
     points: Vec<[Vec2; 4]>,
     velocities: Vec<[Vec2; 4]>,
     rng: Rng,
 }
 
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<BezierMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
-) {
+fn build_curves(points: &[[Vec2; 4]]) -> Vec<BezierCurve> {
+    points
+        .iter()
+        .enumerate()
+        .flat_map(|(i, p)| {
+            BezierCurve::cubic(p[0], p[1], p[2], p[3]).map(|c| {
+                c.with_color(CURVE_COLORS[i]).with_width(CURVE_WIDTH)
+            })
+        })
+        .collect()
+}
+
+fn setup(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         Transform::from_translation(Vec3::new(0.0, 3.5, 3.5))
             .looking_at(Vec3::ZERO, Vec3::Y),
     ));
-
-    let background = LinearRgba::new(0.05, 0.05, 0.08, 0.0);
 
     let mut rng = Rng::new(67676767); // lol
     let points: Vec<[Vec2; 4]> = (0..CURVE_COLORS.len())
@@ -111,94 +115,62 @@ fn setup(
         })
         .collect();
     let velocities = vec![[Vec2::ZERO; 4]; points.len()];
-
-    let curves: Vec<BezierCurve> = points
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            BezierCurve::new(p[0], p[1], p[2], p[3])
-                .with_color(CURVE_COLORS[i])
-                .with_width(CURVE_WIDTH)
-        })
-        .collect();
-
-    let material = materials.add(BezierMaterial::from_curves(
-        background,
-        curves,
-        &mut storage_buffers,
-    ));
+    let curves = build_curves(&points);
 
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(2.5)))),
-        MeshMaterial3d(material.clone()),
+        Sketch {
+            position: Vec2::ZERO,
+            plane: Plane::top(),
+            curves,
+        }
+        .into_bundle(),
+        WanderingPoints {
+            points,
+            velocities,
+            rng,
+        },
     ));
-
-    commands.insert_resource(WanderingCurves {
-        material,
-        background,
-        points,
-        velocities,
-        rng,
-    });
 }
 
 fn wander_control_points(
     time: Res<Time>,
-    mut wandering: ResMut<WanderingCurves>,
-    mut materials: ResMut<Assets<BezierMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut query: Query<(&mut Sketch, &mut WanderingPoints)>,
 ) {
     let dt = time.delta_secs();
-    let WanderingCurves {
-        points,
-        velocities,
-        rng,
-        ..
-    } = &mut *wandering;
 
-    for (point, velocity) in
-        points.iter_mut().zip(velocities.iter_mut())
-    {
-        for (p, v) in point.iter_mut().zip(velocity.iter_mut()) {
-            // random accel values
-            *v +=
-                Vec2::new(rng.range(-1.0, 1.0), rng.range(-1.0, 1.0))
-                    * ACCEL
+    for (mut sketch, mut wandering) in &mut query {
+        let WanderingPoints {
+            points,
+            velocities,
+            rng,
+        } = &mut *wandering;
+
+        for (point, velocity) in
+            points.iter_mut().zip(velocities.iter_mut())
+        {
+            for (p, v) in point.iter_mut().zip(velocity.iter_mut()) {
+                // random accel values
+                *v += Vec2::new(
+                    rng.range(-1.0, 1.0),
+                    rng.range(-1.0, 1.0),
+                ) * ACCEL
                     * dt;
-            *v = v.clamp_length_max(MAX_SPEED);
-            *p += *v * dt;
+                *v = v.clamp_length_max(MAX_SPEED);
+                *p += *v * dt;
 
-            if p.x < POINT_BOUNDS_MIN || p.x > POINT_BOUNDS_MAX {
-                p.x = p.x.clamp(POINT_BOUNDS_MIN, POINT_BOUNDS_MAX);
-                v.x = -v.x;
-            }
-            if p.y < POINT_BOUNDS_MIN || p.y > POINT_BOUNDS_MAX {
-                p.y = p.y.clamp(POINT_BOUNDS_MIN, POINT_BOUNDS_MAX);
-                v.y = -v.y;
+                if p.x < POINT_BOUNDS_MIN || p.x > POINT_BOUNDS_MAX {
+                    p.x =
+                        p.x.clamp(POINT_BOUNDS_MIN, POINT_BOUNDS_MAX);
+                    v.x = -v.x;
+                }
+                if p.y < POINT_BOUNDS_MIN || p.y > POINT_BOUNDS_MAX {
+                    p.y =
+                        p.y.clamp(POINT_BOUNDS_MIN, POINT_BOUNDS_MAX);
+                    v.y = -v.y;
+                }
             }
         }
+
+        sketch.curves = build_curves(points);
     }
-
-    let curves: Vec<BezierCurve> = points
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            BezierCurve::new(p[0], p[1], p[2], p[3])
-                .with_color(CURVE_COLORS[i])
-                .with_width(CURVE_WIDTH)
-            // .with_debug(true)
-        })
-        .collect();
-
-    if let Some(material) = materials.get(&wandering.material) {
-        material.update_curves(
-            wandering.background,
-            &curves,
-            &mut storage_buffers,
-        );
-    }
-
-    // doesnt automatically reload the material, so mark it to force a rebuild
-    // NOTE: might be expensive
-    materials.get_mut(&wandering.material);
 }

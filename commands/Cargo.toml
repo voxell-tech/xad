@@ -1,0 +1,9 @@
+[package]
+name = "command-system"
+description = "Linear command/feature system"
+
+repository.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[dependencies]

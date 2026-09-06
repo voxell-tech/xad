@@ -1,7 +1,8 @@
-use bevy::prelude::*;
+use bevy_color::LinearRgba;
+use bevy_math::Vec2;
 
-use crate::bezier::BezierCurve;
-use crate::sketch::features::line::line;
+use crate::BezierCurve;
+use crate::shapes::line::line;
 
 // axis aligned
 pub fn rectangle(

@@ -2,6 +2,12 @@ use bevy::prelude::*;
 use bevy::render::extract_component::{
     ExtractComponent, ExtractComponentPlugin,
 };
+use command_system::{
+    Feature, FeatureId, FeatureOutput, FeatureType,
+};
+use std::collections::HashMap;
+
+use crate::sdf::transform::SdfTransform;
 
 pub struct SdfBooleanPlugin;
 
@@ -97,4 +103,46 @@ fn assign_sdf_group_children(
     }
 
     commands.entity(group_entity).add_children(&child_entities);
+}
+
+#[derive(Debug)]
+pub struct BooleanSubtract {
+    pub target: FeatureId,
+    pub tool: FeatureId,
+}
+
+impl Feature<World, Entity> for BooleanSubtract {
+    fn kind(&self) -> FeatureType {
+        FeatureType::Volume
+    }
+
+    fn apply(
+        &self,
+        world: &mut World,
+        outputs: &HashMap<FeatureId, FeatureOutput<World, Entity>>,
+    ) -> FeatureOutput<World, Entity> {
+        let target = outputs.get(&self.target).and_then(|o| o.value);
+        let tool = outputs.get(&self.tool).and_then(|o| o.value);
+
+        let value = match (target, tool) {
+            (Some(target), Some(tool)) => Some(
+                world
+                    .spawn((
+                        SdfGroup::new(target).difference(tool),
+                        SdfTransform::default(),
+                    ))
+                    .id(),
+            ),
+            _ => None,
+        };
+
+        FeatureOutput {
+            value,
+            cleanup: Some(Box::new(|entity, world: &mut World| {
+                if let Some(&entity) = entity {
+                    world.despawn(entity);
+                }
+            })),
+        }
+    }
 }

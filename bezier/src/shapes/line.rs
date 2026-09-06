@@ -1,6 +1,7 @@
-use bevy::prelude::*;
+use bevy_color::LinearRgba;
+use bevy_math::Vec2;
 
-use crate::bezier::BezierCurve;
+use crate::BezierCurve;
 
 pub fn line(
     a: Vec2,
@@ -8,7 +9,7 @@ pub fn line(
     color: LinearRgba,
     stroke_width: f32,
 ) -> BezierCurve {
-    BezierCurve::new(a, a.lerp(b, 1.0 / 3.0), a.lerp(b, 2.0 / 3.0), b)
+    BezierCurve::new(a, a.lerp(b, 0.5), b)
         .with_color(color)
         .with_width(stroke_width)
 }

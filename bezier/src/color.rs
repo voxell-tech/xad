@@ -1,4 +1,4 @@
-use bevy::prelude::LinearRgba;
+use bevy_color::LinearRgba;
 use rand::seq::IndexedRandom;
 
 // TODO: consider throwing this into some sort of config instead of hardcoding it

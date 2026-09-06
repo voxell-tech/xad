@@ -1,9 +1,10 @@
 use std::f32::consts::TAU;
 
-use bevy::prelude::*;
+use bevy_color::LinearRgba;
+use bevy_math::Vec2;
 
-use crate::bezier::BezierCurve;
-use crate::sketch::features::arc::arc;
+use crate::BezierCurve;
+use crate::shapes::arc::arc;
 
 pub fn circle(
     center: Vec2,

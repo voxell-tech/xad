@@ -1,0 +1,33 @@
+[package]
+name = "xad"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.18.0", default-features = false, features = ["3d", "file_watcher"] }
+bevy_egui = "0.39.0"
+rand = "0.9.2"
+encase = "0.12.0"
+bezier = { path = "../bezier" }
+command-system = { path = "../commands" }
+sketch = { path = "../sketch" }
+
+[[example]]
+name = "command_system_demo"
+path = "../examples/command_system_demo.rs"
+
+[[example]]
+name = "bezier_single"
+path = "../examples/bezier_single.rs"
+
+[[example]]
+name = "bezier_multi"
+path = "../examples/bezier_multi.rs"
+
+[[example]]
+name = "bezier_realtime"
+path = "../examples/bezier_realtime.rs"
+
+[[example]]
+name = "bezier_sketch"
+path = "../examples/bezier_sketch.rs"
