@@ -1,8 +1,0 @@
-[package]
-name = "command-system"
-description = "Command system used to linearly construct a SDF volume"
-
-repository.workspace = true
-edition.workspace = true
-version.workspace = true
-
