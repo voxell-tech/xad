@@ -13,7 +13,7 @@ use crate::Sketch;
 // preferably want these to be indenpendent of bevy
 #[allow(dead_code)]
 #[derive(Component, Clone, Copy)]
-pub struct Circle {
+pub struct CircleComponent {
     pub position: Vec2,
     pub radius: f32,
 }
@@ -54,7 +54,7 @@ impl Feature<World, Entity> for CreateCircle {
         FeatureOutput {
             value: Some(
                 world
-                    .spawn(Circle {
+                    .spawn(CircleComponent {
                         position: self.position,
                         radius: self.radius,
                     })
