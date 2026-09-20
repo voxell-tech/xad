@@ -1,7 +1,7 @@
 //! Example: a simple 2D sketch that draws some basic shapes (square, hexagon, a heart <3, and a circle)
 
 use bevy::prelude::*;
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::ShaderBuffer;
 use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
 use xad::sketch::color::gen_color;
 use xad::sketch::features::circle::circle;
@@ -76,7 +76,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BezierMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
     commands.spawn((
         Camera3d::default(),
