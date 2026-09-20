@@ -9,7 +9,6 @@ readme = "./README.md"
 
 [dependencies]
 bevy = { workspace = true, features = ["3d", "file_watcher"] }
-bevy_egui = { workspace = true }
 rand = { workspace = true }
 
 [lints]

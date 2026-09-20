@@ -14,7 +14,6 @@ xad = { version = "0.1.0", path = "crates/xad" }
 
 # bevy
 bevy = { version = "0.19", default-features = false }
-bevy_egui = "0.42.0"
 
 # other
 rand = "0.9.2"
