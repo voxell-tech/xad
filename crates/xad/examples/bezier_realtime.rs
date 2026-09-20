@@ -4,7 +4,7 @@
 //! curves in realtime, rather than baking them once at spawn time.
 
 use bevy::prelude::*;
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::ShaderBuffer;
 use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
 
 const CURVE_COLORS: [LinearRgba; 3] = [
@@ -77,7 +77,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BezierMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
     commands.spawn((
         Camera3d::default(),
@@ -146,7 +146,7 @@ fn wander_control_points(
     time: Res<Time>,
     mut wandering: ResMut<WanderingCurves>,
     mut materials: ResMut<Assets<BezierMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
     let dt = time.delta_secs();
     let WanderingCurves {

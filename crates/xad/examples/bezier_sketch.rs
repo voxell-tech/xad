@@ -1,11 +1,10 @@
 //! Example: a simple 2D sketch that draws some basic shapes (square, hexagon, a heart <3, and a circle)
 
 use bevy::prelude::*;
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::ShaderBuffer;
 use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
 use xad::sketch::color::gen_color;
 use xad::sketch::features::circle::circle;
-use xad::sketch::features::line::line as feature_line;
 use xad::sketch::features::polygon::polygon as feature_polygon;
 use xad::sketch::features::square::square as feature_square;
 
@@ -19,13 +18,6 @@ fn main() {
 const HALF_EXTENT: f32 = 1.0;
 const LINE_WIDTH: f32 = 0.005;
 const ENDPOINT_RADIUS: f32 = 0.015;
-
-// Wraps the shared `line` helper with this example's endpoint-dot styling.
-fn line(a: Vec2, b: Vec2, color: LinearRgba) -> BezierCurve {
-    feature_line(a, b, color, LINE_WIDTH)
-        .with_draw_endpoints(true)
-        .with_endpoint_radius(ENDPOINT_RADIUS)
-}
 
 fn square(color: LinearRgba) -> Vec<BezierCurve> {
     feature_square(Vec2::splat(0.5), 0.6, color, LINE_WIDTH)
@@ -84,7 +76,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BezierMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
     commands.spawn((
         Camera3d::default(),

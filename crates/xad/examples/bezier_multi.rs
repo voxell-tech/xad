@@ -4,7 +4,7 @@
 //! whatever direction.
 
 use bevy::prelude::*;
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::ShaderBuffer;
 use xad::bezier::{BezierCurve, BezierMaterial, BezierPlugin};
 
 fn main() {
@@ -20,7 +20,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BezierMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
     commands.spawn((
         Camera3d::default(),

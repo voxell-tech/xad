@@ -1,16 +1,13 @@
 use bevy::core_pipeline::FullscreenShader;
-use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
-use bevy::ecs::query::QueryItem;
-use bevy::ecs::system::lifetimeless::Read;
-use bevy::math::Affine3;
+use bevy::core_pipeline::schedule::{Core3d, Core3dSystems};
+use bevy::math::{Affine3, Affine3Ext};
 use bevy::prelude::*;
 use bevy::render::extract_component::*;
-use bevy::render::render_graph::*;
 use bevy::render::render_resource::binding_types::*;
 use bevy::render::render_resource::encase::private::WriteInto;
 use bevy::render::render_resource::*;
 use bevy::render::renderer::{
-    RenderContext, RenderDevice, RenderQueue,
+    RenderContext, RenderDevice, RenderQueue, ViewQuery,
 };
 use bevy::render::view::{
     ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms,
@@ -86,144 +83,114 @@ impl Plugin for SdfPlugin {
                     .in_set(RenderSystems::PrepareResources),
             );
 
-        render_app
-            .add_render_graph_node::<ViewNodeRunner<SdfNode>>(
-                Core3d,
-                SdfRenderLabel,
-            )
-            .add_render_graph_edges(
-                Core3d,
-                (
-                    Node3d::EndMainPass,
-                    SdfRenderLabel,
-                    Node3d::StartMainPassPostProcessing,
-                ),
-            );
+        render_app.add_systems(
+            Core3d,
+            sdf_pass.in_set(Core3dSystems::EarlyPostProcess),
+        );
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-pub struct SdfRenderLabel;
+fn sdf_pass(
+    view: ViewQuery<(
+        &ViewTarget,
+        &SdfCamera,
+        &DynamicUniformIndex<SdfCamera>,
+        &ViewUniformOffset,
+    )>,
+    pipeline_cache: Res<PipelineCache>,
+    sdf_pipeline: Res<SdfPipeline>,
+    sdf_buffers: Res<SdfBuffers>,
+    view_uniforms: Res<ViewUniforms>,
+    sdf_cameras: Res<ComponentUniforms<SdfCamera>>,
+    mut ctx: RenderContext,
+) {
+    let (view_target, _, sdf_camera_index, view_offset) =
+        view.into_inner();
 
-#[derive(Default)]
-pub struct SdfNode;
+    let (
+        Some(pipeline),
+        Some(view_uniforms_binding),
+        Some(sdf_cameras_binding),
+        Some(transform_buffer_binding),
+        Some(sphere_buffer_binding),
+        Some(cuboid_buffer_binding),
+        Some(round_cuboid_buffer_binding),
+        Some(capsule_buffer_binding),
+        Some(torus_buffer_binding),
+    ) = (
+        pipeline_cache.get_render_pipeline(sdf_pipeline.pipeline_id),
+        view_uniforms.uniforms.binding(),
+        sdf_cameras.uniforms().binding(),
+        sdf_buffers.input_buffer.binding(),
+        sdf_buffers.sphere_buffer.binding(),
+        sdf_buffers.cuboid_buffer.binding(),
+        sdf_buffers.round_cuboid_buffer.binding(),
+        sdf_buffers.capsule_buffer.binding(),
+        sdf_buffers.torus_buffer.binding(),
+    )
+    else {
+        return;
+    };
 
-impl ViewNode for SdfNode {
-    type ViewQuery = (
-        Read<ViewTarget>,
-        Read<SdfCamera>,
-        Read<DynamicUniformIndex<SdfCamera>>,
-        Read<ViewUniformOffset>,
+    let post_process_write = view_target.post_process_write();
+
+    // The bind_group gets created each frame.
+    //
+    // Normally, you would create a bind_group in the `Queue` set,
+    // but this doesn't work with the `post_process_write()`
+    // because each call will alternate the source/destination.
+    //
+    // The only way to have the correct source/destination for the
+    // `bind_group` is to make sure you get it during the node
+    // execution.
+    let bind_group = ctx.render_device().create_bind_group(
+        "sdf_bind_group",
+        &pipeline_cache.get_bind_group_layout(&sdf_pipeline.layout),
+        &BindGroupEntries::sequential((
+            post_process_write.source,
+            &sdf_pipeline.screen_sampler,
+            view_uniforms_binding,
+            sdf_cameras_binding,
+            transform_buffer_binding,
+            sphere_buffer_binding,
+            cuboid_buffer_binding,
+            round_cuboid_buffer_binding,
+            capsule_buffer_binding,
+            torus_buffer_binding,
+        )),
     );
 
-    fn run<'w>(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext<'w>,
-        (view_target, _, sdf_camera_index, view_offset): QueryItem<
-            'w,
-            '_,
-            Self::ViewQuery,
-        >,
-        world: &'w World,
-    ) -> Result<(), NodeRunError> {
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let sdf_pipeline = world.resource::<SdfPipeline>();
-        let sdf_buffers = world.resource::<SdfBuffers>();
-        let view_uniforms = world.resource::<ViewUniforms>();
-        let sdf_cameras =
-            world.resource::<ComponentUniforms<SdfCamera>>();
+    // Begin the render pass.
+    let mut render_pass = ctx.command_encoder().begin_render_pass(
+        &RenderPassDescriptor {
+            label: Some("sdf_pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: post_process_write.destination,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations::default(),
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        },
+    );
 
-        let (
-            Some(pipeline),
-            Some(view_uniforms_binding),
-            Some(sdf_cameras_binding),
-            Some(transform_buffer_binding),
-            Some(sphere_buffer_binding),
-            Some(cuboid_buffer_binding),
-            Some(round_cuboid_buffer_binding),
-            Some(capsule_buffer_binding),
-            Some(torus_buffer_binding),
-        ) = (
-            pipeline_cache
-                .get_render_pipeline(sdf_pipeline.pipeline_id),
-            view_uniforms.uniforms.binding(),
-            sdf_cameras.uniforms().binding(),
-            sdf_buffers.input_buffer.binding(),
-            sdf_buffers.sphere_buffer.binding(),
-            sdf_buffers.cuboid_buffer.binding(),
-            sdf_buffers.round_cuboid_buffer.binding(),
-            sdf_buffers.capsule_buffer.binding(),
-            sdf_buffers.torus_buffer.binding(),
-        )
-        else {
-            return Ok(());
-        };
-
-        let post_process_write = view_target.post_process_write();
-
-        // The bind_group gets created each frame.
-        //
-        // Normally, you would create a bind_group in the `Queue` set,
-        // but this doesn't work with the `post_process_write()`
-        // because each call will alternate the source/destination.
-        //
-        // The only way to have the correct source/destination for the
-        // `bind_group` is to make sure you get it during the node
-        // execution.
-        let bind_group =
-            render_context.render_device().create_bind_group(
-                "sdf_bind_group",
-                &pipeline_cache
-                    .get_bind_group_layout(&sdf_pipeline.layout),
-                &BindGroupEntries::sequential((
-                    post_process_write.source,
-                    &sdf_pipeline.screen_sampler,
-                    view_uniforms_binding,
-                    sdf_cameras_binding,
-                    transform_buffer_binding,
-                    sphere_buffer_binding,
-                    cuboid_buffer_binding,
-                    round_cuboid_buffer_binding,
-                    capsule_buffer_binding,
-                    torus_buffer_binding,
-                )),
-            );
-
-        // Begin the render pass.
-        let mut render_pass = render_context
-            .begin_tracked_render_pass(RenderPassDescriptor {
-                label: Some("sdf_pass"),
-                color_attachments: &[Some(
-                    RenderPassColorAttachment {
-                        view: post_process_write.destination,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: Operations::default(),
-                    },
-                )],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-        // This is mostly just wgpu boilerplate for drawing a
-        // fullscreen triangle, using the pipeline/bind_group created
-        // above.
-        render_pass.set_render_pipeline(pipeline);
-        // By passing in the index of the post process settings on
-        // this view, we ensure that in the event that multiple
-        // settings were sent to the GPU (as would be the case with
-        // multiple cameras), we use the correct one.
-        render_pass.set_bind_group(
-            0,
-            &bind_group,
-            &[view_offset.offset, sdf_camera_index.index()],
-        );
-        render_pass.draw(0..3, 0..1);
-
-        Ok(())
-    }
+    // This is mostly just wgpu boilerplate for drawing a
+    // fullscreen triangle, using the pipeline/bind_group created
+    // above.
+    render_pass.set_pipeline(pipeline);
+    // By passing in the index of the post process settings on
+    // this view, we ensure that in the event that multiple
+    // settings were sent to the GPU (as would be the case with
+    // multiple cameras), we use the correct one.
+    render_pass.set_bind_group(
+        0,
+        &bind_group,
+        &[view_offset.offset, sdf_camera_index.index()],
+    );
+    render_pass.draw(0..3, 0..1);
 }
 
 /// Global data used by the render pipeline. Created once on startup.
@@ -417,7 +384,7 @@ fn init_sdf_pipeline(
                 // shader. It can be anything as long as it matches
                 // here and in the shader.
                 targets: vec![Some(ColorTargetState {
-                    format: TextureFormat::bevy_default(),
+                    format: TextureFormat::Rgba8UnormSrgb,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],
@@ -500,7 +467,7 @@ impl SdfInput {
     ) -> Self {
         Self {
             local_from_world: Affine3::from(
-                &global_transform.world_from_local().inverse(),
+                global_transform.world_from_local().inverse(),
             )
             .to_transpose(),
             scale: global_transform.scale(),

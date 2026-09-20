@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderType};
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::ShaderBuffer;
 use bevy::shader::ShaderRef;
 
 pub struct BezierPlugin;
@@ -126,7 +126,7 @@ struct BezierGpuData {
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct BezierMaterial {
     #[storage(0, read_only)]
-    pub buffer: Handle<ShaderStorageBuffer>,
+    pub buffer: Handle<ShaderBuffer>,
 }
 
 impl BezierMaterial {
@@ -134,7 +134,7 @@ impl BezierMaterial {
     pub fn from_curves(
         background: LinearRgba,
         curves: Vec<BezierCurve>,
-        storage_buffers: &mut Assets<ShaderStorageBuffer>,
+        storage_buffers: &mut Assets<ShaderBuffer>,
     ) -> Self {
         let mut data = BezierGpuData {
             background_color: Vec4::new(
@@ -152,8 +152,7 @@ impl BezierMaterial {
             data.curves[i] = curve;
         }
         Self {
-            buffer: storage_buffers
-                .add(ShaderStorageBuffer::from(data)),
+            buffer: storage_buffers.add(ShaderBuffer::from(data)),
         }
     }
 
@@ -163,7 +162,7 @@ impl BezierMaterial {
         &self,
         background: LinearRgba,
         curves: &[BezierCurve],
-        storage_buffers: &mut Assets<ShaderStorageBuffer>,
+        storage_buffers: &mut Assets<ShaderBuffer>,
     ) {
         let mut data = BezierGpuData {
             background_color: Vec4::new(
@@ -180,7 +179,9 @@ impl BezierMaterial {
         {
             data.curves[i] = *curve;
         }
-        if let Some(buffer) = storage_buffers.get_mut(&self.buffer) {
+        if let Some(mut buffer) =
+            storage_buffers.get_mut(&self.buffer)
+        {
             buffer.set_data(data);
         }
     }
