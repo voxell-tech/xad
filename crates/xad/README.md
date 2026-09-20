@@ -4,31 +4,10 @@
 [![CI](https://github.com/voxell-tech/xad/workflows/CI/badge.svg)](https://github.com/voxell-tech/xad/actions)
 [![Discord](https://img.shields.io/discord/442334985471655946.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/Mhnyp6VYEQ)
 
-![Xad Interface Preview](/.github/assets/test_setup.png)
-
-## Introduction
-
-**Xad** is a modern precision modeling engine, built on
-[Bevy](https://bevy.org) and signed distance fields (SDFs).
-
-### Workspace
-
-| Crate | Description |
-| ----- | ----------- |
-| [`xad`](https://github.com/voxell-tech/xad/tree/main/crates/xad) | The SDF engine, Bezier sketches, and the demo app. |
-
-## Running
-
-```sh
-cargo run -p xad
-```
-
-## Contributing
-
-Read [`docs/comment_convention.md`](/docs/comment_convention.md) and
-[`docs/code_convention.md`](/docs/code_convention.md) before opening a
-PR. The checks a PR needs to pass are in
-[`.github/workflows/rust.yml`](/.github/workflows/rust.yml).
+**Xad** is a modern precision modeling engine: an SDF raymarching
+pipeline with primitives, booleans and transforms, plus a Bezier
+sketch renderer. `XadPlugin` wires the SDF pipeline and flycam onto
+an `App`; `BezierPlugin` adds the sketch material.
 
 ## Join the community!
 

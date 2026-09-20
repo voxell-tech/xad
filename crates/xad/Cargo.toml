@@ -1,0 +1,16 @@
+[package]
+name = "xad"
+description = "A modern precision modeling engine."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "./README.md"
+
+[dependencies]
+bevy = { workspace = true, features = ["3d", "file_watcher"] }
+bevy_egui = { workspace = true }
+rand = { workspace = true }
+
+[lints]
+workspace = true
