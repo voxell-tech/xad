@@ -15,8 +15,12 @@ struct BezierCurve {
 
 struct BezierBuffer {
     background_color:   vec4f,
+    // Plane origin and basis, used to map each fragment's world position into
+    // the sketch's real coordinate space (independent of mesh UV orientation).
+    origin:             vec4f,
+    tangent:            vec4f,
+    bitangent:          vec4f,
     curve_count:        u32,
-    // TODO: recalculate padding for byte offset
     _padding:           array<f32, 3>,
     curves:             array<BezierCurve, 32>,
 }
@@ -162,7 +166,9 @@ fn draw_endpoint(canvas: vec4f, uv: vec2f, p: vec2f, radius: f32, dot_color: vec
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4f {
-    let uv   = in.uv;
+    // Fragment world position -> the sketch's plane-local coordinates.
+    let rel  = in.world_position.xyz - data.origin.xyz;
+    let uv   = vec2f(dot(rel, data.tangent.xyz), dot(rel, data.bitangent.xyz));
     var color = data.background_color.rgb;
     var alpha = data.background_color.a;
 

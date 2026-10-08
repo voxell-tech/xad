@@ -40,14 +40,43 @@ pub struct Sketch {
 }
 
 impl Sketch {
-    // normalises pos to the plane's face, in world space
-    pub fn get_position(&self) -> Vec3 {
+    // Orthonormal (tangent, bitangent) basis spanning the plane's face
+    // https://blog.claytonsanford.com/2021/07/16/orthogonality.html
+    fn basis(&self) -> (Vec3, Vec3) {
         let normal = self.plane.normal();
         let helper =
             if normal == Vec3::Y { Vec3::Z } else { Vec3::Y };
         let tangent = helper.cross(normal).normalize();
         let bitangent = normal.cross(tangent).normalize();
-        tangent * self.position.x + bitangent * self.position.y
+        (tangent, bitangent)
+    }
+
+    // Maps a plane-local coordinate to a world offset, from the plane origin
+    pub fn plane_offset(&self, local: Vec2) -> Vec3 {
+        let (tangent, bitangent) = self.basis();
+        tangent * local.x + bitangent * local.y
+    }
+
+    // World-space (tangent, bitangent) spanning the plane's face.
+    pub fn plane_basis(&self) -> (Vec3, Vec3) {
+        self.basis()
+    }
+
+    // normalises pos to the plane's face, in world space
+    pub fn get_position(&self) -> Vec3 {
+        self.plane_offset(self.position)
+    }
+
+    // World position of a plane-local coordinate (e.g. a curve control point).
+    pub fn plane_point(&self, local: Vec2) -> Vec3 {
+        self.get_position() + self.plane_offset(local)
+    }
+
+    // Projects a world point back into plane-local coordinates.
+    pub fn world_to_local(&self, world: Vec3) -> Vec2 {
+        let (tangent, bitangent) = self.basis();
+        let rel = world - self.get_position();
+        Vec2::new(rel.dot(tangent), rel.dot(bitangent))
     }
 
     pub fn into_bundle(self) -> impl Bundle {

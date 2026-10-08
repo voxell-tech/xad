@@ -12,21 +12,33 @@ command-system = { path = "../commands" }
 sketch = { path = "../sketch" }
 
 [[example]]
-name = "command_system_demo"
-path = "../examples/command_system_demo.rs"
+name = "commands_demo"
+path = "../examples/commands/demo.rs"
 
 [[example]]
 name = "bezier_single"
-path = "../examples/bezier_single.rs"
+path = "../examples/bezier/single.rs"
 
 [[example]]
 name = "bezier_multi"
-path = "../examples/bezier_multi.rs"
+path = "../examples/bezier/multi.rs"
 
 [[example]]
 name = "bezier_realtime"
-path = "../examples/bezier_realtime.rs"
+path = "../examples/bezier/realtime.rs"
 
 [[example]]
-name = "bezier_sketch"
-path = "../examples/bezier_sketch.rs"
+name = "bezier_split"
+path = "../examples/bezier/split.rs"
+
+[[example]]
+name = "sketch_demo"
+path = "../examples/sketch/demo.rs"
+
+[[example]]
+name = "sketch_faces"
+path = "../examples/sketch/faces.rs"
+
+[[example]]
+name = "sketch_interactive"
+path = "../examples/sketch/interactive.rs"
