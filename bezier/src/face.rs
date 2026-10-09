@@ -94,7 +94,9 @@ pub fn detect_faces(curves: &[BezierCurve]) -> Faces {
         loops.iter().map(|l| graph.polygon(l)).collect();
     let areas: Vec<f32> =
         polygons.iter().map(|p| signed_area(p).abs()).collect();
-    for (face, parent) in enclosing_faces(&loops, &polygons, &areas, &graph) {
+    for (face, parent) in
+        enclosing_faces(&loops, &polygons, &areas, &graph)
+    {
         for (curve, forward) in graph.curves_along(&loops[face]) {
             let sides = &mut polarity[curve];
             let free = if forward {

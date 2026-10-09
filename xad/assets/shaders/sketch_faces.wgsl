@@ -16,6 +16,8 @@ struct FaceBuffer {
     tangent:    vec4f,
     bitangent:  vec4f,
     edge_count: u32,
+    // Non-zero = tint by nearest edge instead of face color.
+    debug_tint: u32,
     colors:     array<vec4f, 32>,
     edges:      array<Edge, 128>,
 }
@@ -130,10 +132,6 @@ fn edge_tint(i: u32) -> vec3f {
     return 0.35 + 0.65 * rgb;
 }
 
-// Tint by nearest edge instead of face color, exposing where each edge's
-// nearest-region begins and ends. Ties between near-equidistant edges dither.
-const DEBUG_NEAREST_EDGE: bool = false;
-
 // Endpoints this close count as the same vertex (2x the CPU weld distance).
 const VERTEX_EPS: f32 = 4e-3;
 const NO_SECTOR: u32 = 0xffffffffu;
@@ -207,7 +205,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
         }
     }
 
-    if (DEBUG_NEAREST_EDGE) {
+    // Tint by nearest edge instead of face color, exposing where each
+    // edge's nearest-region begins and ends. Toggled with R.
+    if (data.debug_tint != 0u) {
         return vec4f(edge_tint(index), 0.85);
     }
 

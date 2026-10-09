@@ -3,7 +3,7 @@
 //! - A sketch is created on a camera-facing plane via a `Timeline`.
 //! - The cursor is raycast from the screen onto the sketch plane.
 //! - Left-click on empty space drops a control point (a draggable sphere).
-//! - Every 2 points appends a `CreateLine` command and regenerates the sketch.
+//! - Every 4 points appends a `CreateCurve` command and regenerates the sketch.
 //! - Dragging any sphere moves its point and regenerates the timeline.
 //!
 //! All bevy/input logic lives here and in the `xad` crate; the `sketch` and
@@ -12,7 +12,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use command_system::Timeline;
-use sketch::features::CreateLine;
+use sketch::features::CreateCurve;
 use sketch::{CreateSketch, Plane};
 use xad::material::{BezierMaterialPlugin, FaceMaterialPlugin};
 
@@ -76,7 +76,7 @@ fn setup(world: &mut World) {
     world.insert_non_send_resource(editor);
 
     info!(
-        "Left-click to place points; every 2 make a line. Drag points to edit."
+        "Left-click to place control points; every 4 make a curve. Drag points to edit. L toggles face labels."
     );
 }
 
@@ -112,7 +112,7 @@ fn interact(world: &mut World) {
                     let entity = spawn_point(world, &editor, hit);
                     editor.points.push(hit);
                     editor.point_entities.push(entity);
-                    // A point placed may complete a 2-point line.
+                    // A point placed may complete a 4-point curve.
                     changed = true;
                 }
             }
@@ -142,7 +142,7 @@ fn interact(world: &mut World) {
 }
 
 // Rebuilds the timeline from the current points and regenerates the sketch:
-// one `CreateLine` per completed pair of points.
+// one `CreateCurve` per completed group of four control points.
 fn rebuild(editor: &mut Editor, world: &mut World) {
     editor.timeline.cleanup(world);
 
@@ -151,11 +151,10 @@ fn rebuild(editor: &mut Editor, world: &mut World) {
         plane: Plane::right(),
         position: Vec2::ZERO,
     });
-    for pair in editor.points.chunks_exact(2) {
-        timeline.push(CreateLine {
+    for group in editor.points.chunks_exact(4) {
+        timeline.push(CreateCurve {
             sketch,
-            a: pair[0],
-            b: pair[1],
+            points: [group[0], group[1], group[2], group[3]],
         });
     }
     timeline.regen(world);

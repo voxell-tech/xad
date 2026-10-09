@@ -22,7 +22,7 @@ struct BezierBuffer {
     bitangent:          vec4f,
     curve_count:        u32,
     _padding:           array<f32, 3>,
-    curves:             array<BezierCurve, 32>,
+    curves:             array<BezierCurve, 128>,
 }
 
 @group(3) @binding(0) var<storage, read> data: BezierBuffer;

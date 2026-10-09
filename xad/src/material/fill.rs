@@ -28,6 +28,8 @@ struct FaceBuffer {
     tangent: Vec4,
     bitangent: Vec4,
     edge_count: u32,
+    // Non-zero = tint by nearest edge instead of face color.
+    debug_tint: u32,
     colors: [Vec4; MAX_FACES],
     edges: [Edge; MAX_EDGES],
 }
@@ -39,6 +41,7 @@ impl Default for FaceBuffer {
             tangent: Vec4::X,
             bitangent: Vec4::Y,
             edge_count: 0,
+            debug_tint: 0,
             colors: [Vec4::ZERO; MAX_FACES],
             edges: [Edge::default(); MAX_EDGES],
         }
@@ -62,12 +65,14 @@ impl FaceMaterial {
         polarity: &[Polarity],
         colors: &[LinearRgba],
         frame: PlaneFrame,
+        debug_tint: bool,
         storage_buffers: &mut Assets<ShaderStorageBuffer>,
     ) -> Self {
         let mut buffer = FaceBuffer {
             origin: frame.origin.extend(0.0),
             tangent: frame.tangent.extend(0.0),
             bitangent: frame.bitangent.extend(0.0),
+            debug_tint: debug_tint as u32,
             ..Default::default()
         };
 
@@ -123,6 +128,16 @@ pub struct FaceMaterialPlugin;
 impl Plugin for FaceMaterialPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<FaceMaterial>::default())
-            .add_systems(Update, super::debug::position_labels);
+            .init_resource::<super::debug::ShowPolarityLabels>()
+            .init_resource::<super::debug::ShowEdgeTint>()
+            .add_systems(
+                Update,
+                (
+                    super::debug::toggle_labels,
+                    super::debug::toggle_edge_tint,
+                    super::debug::position_labels,
+                )
+                    .chain(),
+            );
     }
 }

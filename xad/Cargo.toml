@@ -40,5 +40,9 @@ name = "sketch_faces"
 path = "../examples/sketch/faces.rs"
 
 [[example]]
+name = "sketch_faces_extreme"
+path = "../examples/sketch/faces_extreme.rs"
+
+[[example]]
 name = "sketch_interactive"
 path = "../examples/sketch/interactive.rs"

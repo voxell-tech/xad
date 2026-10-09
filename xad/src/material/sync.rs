@@ -1,3 +1,5 @@
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use bevy::render::storage::ShaderStorageBuffer;
 use bezier::{bounding_box, detect_faces, split_intersections};
@@ -13,13 +15,29 @@ const BBOX_PAD: f32 = 0.05;
 // TODO: fix this so we do z-index, not just offset the plane
 const FACE_LAYER_OFFSET: f32 = 0.001;
 
-// Tracks the render child-entities spawned for a sketch so they can be
-// replaced when the sketch changes.
+// Tracks the render entities spawned for a sketch. The on_replace hook frees
+// them whenever the component is overwritten by the next rebuild, removed, or
+// its sketch entity despawns — the labels are not children, so they would
+// otherwise outlive the sketch. (on_remove alone misses the overwrite path.)
 #[derive(Component)]
+#[component(on_replace = despawn_render)]
 pub(super) struct SketchRender {
     stroke: Entity,
     fill: Option<Entity>,
     labels: Vec<Entity>,
+}
+
+fn despawn_render(mut world: DeferredWorld, ctx: HookContext) {
+    let render = world.get::<SketchRender>(ctx.entity).unwrap();
+    let entities: Vec<Entity> = std::iter::once(render.stroke)
+        .chain(render.fill)
+        .chain(render.labels.iter().copied())
+        .collect();
+
+    let mut commands = world.commands();
+    for entity in entities {
+        commands.entity(entity).try_despawn();
+    }
 }
 
 // Reactively (re)builds a sketch's rendering: a stroke layer plus one filled
@@ -31,22 +49,15 @@ pub(super) fn sync_sketch_render(
     mut bezier_materials: ResMut<Assets<BezierMaterial>>,
     mut face_materials: ResMut<Assets<FaceMaterial>>,
     mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    edge_tint: Res<debug::ShowEdgeTint>,
     query: Query<
         (Entity, &Sketch, Option<&SketchRender>),
         Changed<Sketch>,
     >,
 ) {
-    for (entity, sketch, prev) in &query {
-        if let Some(prev) = prev {
-            commands.entity(prev.stroke).despawn();
-            if let Some(fill) = prev.fill {
-                commands.entity(fill).despawn();
-            }
-            for &label in &prev.labels {
-                commands.entity(label).despawn();
-            }
-        }
-
+    for (entity, sketch, _) in &query {
+        // Replacing (or removing) SketchRender triggers its on_remove hook,
+        // which despawns the previous stroke/fill/labels.
         let Some(bounds) = bounding_box(&sketch.curves) else {
             commands.entity(entity).remove::<SketchRender>();
             continue;
@@ -95,6 +106,7 @@ pub(super) fn sync_sketch_render(
                 &detected.polarity,
                 &colors,
                 frame,
+                edge_tint.0,
                 &mut storage_buffers,
             ));
             let front = center + normal * FACE_LAYER_OFFSET;
@@ -108,16 +120,12 @@ pub(super) fn sync_sketch_render(
                 .id()
         });
 
-        let labels = if debug::POLARITY_LABELS {
-            debug::spawn_labels(
-                &mut commands,
-                &split,
-                &detected.polarity,
-                frame,
-            )
-        } else {
-            Vec::new()
-        };
+        let labels = debug::spawn_labels(
+            &mut commands,
+            &split,
+            &detected.polarity,
+            frame,
+        );
 
         commands.entity(entity).try_insert(SketchRender {
             stroke,

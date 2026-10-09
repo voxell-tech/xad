@@ -10,7 +10,7 @@ use super::sync::sync_sketch_render;
 
 const BACKGROUND: LinearRgba = LinearRgba::new(0.06, 0.06, 0.09, 1.0);
 // matches the fixed-size array in the WGSL shader
-const MAX_CURVES: usize = 32;
+const MAX_CURVES: usize = 128;
 
 pub struct BezierMaterialPlugin;
 
@@ -22,7 +22,7 @@ impl Plugin for BezierMaterialPlugin {
 }
 
 // matches the WGSL BezierBuffer struct's memory layout
-#[derive(ShaderType, Clone, Copy, Default)]
+#[derive(ShaderType, Clone, Copy)]
 struct BezierBuffer {
     background_color: Vec4,
     origin: Vec4,
@@ -31,6 +31,20 @@ struct BezierBuffer {
     curve_count: u32,
     _padding: [f32; 3],
     curves: [BezierCurve; MAX_CURVES],
+}
+
+impl Default for BezierBuffer {
+    fn default() -> Self {
+        Self {
+            background_color: Vec4::ZERO,
+            origin: Vec4::ZERO,
+            tangent: Vec4::X,
+            bitangent: Vec4::Y,
+            curve_count: 0,
+            _padding: [0.0; 3],
+            curves: [BezierCurve::default(); MAX_CURVES],
+        }
+    }
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
