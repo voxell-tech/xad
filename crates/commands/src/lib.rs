@@ -22,13 +22,17 @@ pub trait Feature<W, E> {
     ) -> FeatureOutput<W, E>;
 }
 
+type Cleanup<W, E> = Box<dyn Fn(Option<&E>, &mut W)>;
+
 pub struct FeatureOutput<W, E> {
     pub value: Option<E>,
-    pub cleanup: Option<Box<dyn Fn(Option<&E>, &mut W)>>,
+    pub cleanup: Option<Cleanup<W, E>>,
 }
 
+type Entry<W, E> = (FeatureId, Box<dyn Feature<W, E>>);
+
 pub struct Timeline<W, E> {
-    entries: Vec<(FeatureId, Box<dyn Feature<W, E>>)>,
+    entries: Vec<Entry<W, E>>,
     outputs: HashMap<FeatureId, FeatureOutput<W, E>>,
     next_id: u64,
 }
