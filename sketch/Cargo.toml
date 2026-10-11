@@ -7,6 +7,6 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-bevy = { version = "0.18.0", default-features = false, features = ["3d", "file_watcher"] }
+bevy = { workspace = true, features = ["3d", "file_watcher"] }
 bezier = { path = "../bezier" }
 command-system = { path = "../commands" }

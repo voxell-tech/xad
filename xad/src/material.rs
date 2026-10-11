@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::ShaderBuffer;
 use bevy::shader::ShaderRef;
 use bezier::BezierCurve;
 use encase::ShaderType;
@@ -32,18 +32,17 @@ struct BezierBuffer {
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct BezierMaterial {
     #[storage(0, read_only)]
-    pub buffer: Handle<ShaderStorageBuffer>,
+    pub buffer: Handle<ShaderBuffer>,
 }
 
 impl BezierMaterial {
     pub fn from_curves(
         curves: &[BezierCurve],
-        storage_buffers: &mut Assets<ShaderStorageBuffer>,
+        storage_buffers: &mut Assets<ShaderBuffer>,
     ) -> Self {
         Self {
-            buffer: storage_buffers.add(ShaderStorageBuffer::from(
-                bezier_buffer(curves),
-            )),
+            buffer: storage_buffers
+                .add(ShaderBuffer::from(bezier_buffer(curves))),
         }
     }
 
@@ -51,9 +50,11 @@ impl BezierMaterial {
     pub fn update_curves(
         &self,
         curves: &[BezierCurve],
-        storage_buffers: &mut Assets<ShaderStorageBuffer>,
+        storage_buffers: &mut Assets<ShaderBuffer>,
     ) {
-        if let Some(buffer) = storage_buffers.get_mut(&self.buffer) {
+        if let Some(mut buffer) =
+            storage_buffers.get_mut(&self.buffer)
+        {
             buffer.set_data(bezier_buffer(curves));
         }
     }
@@ -91,7 +92,7 @@ fn sync_sketch_render(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BezierMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
     query: Query<(Entity, &Sketch), Changed<Sketch>>,
 ) {
     for (entity, sketch) in &query {
