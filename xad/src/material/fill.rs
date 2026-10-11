@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::ShaderBuffer;
 use bevy::shader::ShaderRef;
 use bezier::{BezierCurve, Polarity};
 use encase::ShaderType;
@@ -54,7 +54,7 @@ impl Default for FaceBuffer {
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct FaceMaterial {
     #[storage(0, read_only)]
-    pub buffer: Handle<ShaderStorageBuffer>,
+    pub buffer: Handle<ShaderBuffer>,
 }
 
 impl FaceMaterial {
@@ -66,7 +66,7 @@ impl FaceMaterial {
         colors: &[LinearRgba],
         frame: PlaneFrame,
         debug_tint: bool,
-        storage_buffers: &mut Assets<ShaderStorageBuffer>,
+        storage_buffers: &mut Assets<ShaderBuffer>,
     ) -> Self {
         let mut buffer = FaceBuffer {
             origin: frame.origin.extend(0.0),
@@ -108,7 +108,7 @@ impl FaceMaterial {
 
         Self {
             buffer: storage_buffers
-                .add(ShaderStorageBuffer::from(buffer)),
+                .add(ShaderBuffer::from(buffer)),
         }
     }
 }

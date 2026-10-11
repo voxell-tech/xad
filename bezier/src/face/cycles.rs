@@ -1,7 +1,7 @@
 //! Minimal cycle basis of a planar graph.
 //!
 //! Port of David Eberly's `MinimalCycleBasis` (Geometric Tools, Boost
-//! license): https://www.geometrictools.com/Documentation/MinimalCycleBasis.pdf
+//! license): <https://www.geometrictools.com/Documentation/MinimalCycleBasis.pdf>
 //! The original's exact rational arithmetic is replaced by f64 determinants.
 
 use std::collections::{BTreeSet, HashMap};
@@ -250,8 +250,10 @@ impl Graph {
                 continue;
             };
             detachments.insert(i_min);
-            for j in i_min + 1..i {
-                first_visit.remove(&closed_walk[j]);
+            for (j, vertex) in
+                closed_walk.iter().enumerate().take(i).skip(i_min + 1)
+            {
+                first_visit.remove(vertex);
                 detachments.remove(&j);
             }
             closed_walk.drain(i_min + 1..=i);

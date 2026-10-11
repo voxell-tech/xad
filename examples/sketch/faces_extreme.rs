@@ -50,7 +50,11 @@ fn polygon(
         let angle = std::f32::consts::TAU * (i % count) as f32
             / count as f32
             + std::f32::consts::FRAC_PI_2;
-        let r = if i % 2 == 0 { radius } else { radius * pinch };
+        let r = if i.is_multiple_of(2) {
+            radius
+        } else {
+            radius * pinch
+        };
         center + r * dir(angle)
     };
     (0..count).map(|i| line(vertex(i), vertex(i + 1))).collect()

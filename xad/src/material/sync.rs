@@ -1,7 +1,7 @@
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::ShaderBuffer;
 use bezier::{bounding_box, detect_faces, split_intersections};
 use sketch::Sketch;
 
@@ -20,7 +20,7 @@ const FACE_LAYER_OFFSET: f32 = 0.001;
 // its sketch entity despawns — the labels are not children, so they would
 // otherwise outlive the sketch. (on_remove alone misses the overwrite path.)
 #[derive(Component)]
-#[component(on_replace = despawn_render)]
+#[component(on_discard = despawn_render)]
 pub(super) struct SketchRender {
     stroke: Entity,
     fill: Option<Entity>,
@@ -48,7 +48,7 @@ pub(super) fn sync_sketch_render(
     mut meshes: ResMut<Assets<Mesh>>,
     mut bezier_materials: ResMut<Assets<BezierMaterial>>,
     mut face_materials: ResMut<Assets<FaceMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
     edge_tint: Res<debug::ShowEdgeTint>,
     query: Query<
         (Entity, &Sketch, Option<&SketchRender>),

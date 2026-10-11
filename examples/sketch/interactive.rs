@@ -73,7 +73,7 @@ fn setup(world: &mut World) {
 
     // Create the (empty) sketch up front.
     rebuild(&mut editor, world);
-    world.insert_non_send_resource(editor);
+    world.insert_non_send(editor);
 
     info!(
         "Left-click to place control points; every 4 make a curve. Drag points to edit. L toggles face labels."
@@ -101,7 +101,7 @@ fn interact(world: &mut World) {
     };
 
     let mut editor =
-        world.remove_non_send_resource::<Editor>().unwrap();
+        world.remove_non_send::<Editor>().unwrap();
     let mut changed = false;
 
     if let Some(hit) = hit {
@@ -118,13 +118,12 @@ fn interact(world: &mut World) {
             }
         }
 
-        if held {
-            if let Some(index) = editor.dragging {
-                if editor.points[index] != hit {
-                    editor.points[index] = hit;
-                    changed = true;
-                }
-            }
+        if held
+            && let Some(index) = editor.dragging
+            && editor.points[index] != hit
+        {
+            editor.points[index] = hit;
+            changed = true;
         }
     }
 
@@ -138,7 +137,7 @@ fn interact(world: &mut World) {
         rebuild(&mut editor, world);
     }
 
-    world.insert_non_send_resource(editor);
+    world.insert_non_send(editor);
 }
 
 // Rebuilds the timeline from the current points and regenerates the sketch:

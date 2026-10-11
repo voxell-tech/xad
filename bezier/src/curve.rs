@@ -1,4 +1,5 @@
 mod bounds;
+#[allow(clippy::module_inception)]
 mod curve;
 mod generate;
 mod split;

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { workspace = true, features = ["3d", "file_watcher"] }
+bevy = { workspace = true, features = ["3d", "ui", "file_watcher"] }
 rand = { workspace = true }
 encase = "0.12.0"
 bezier = { path = "../bezier" }
