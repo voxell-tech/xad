@@ -13,36 +13,36 @@ sketch = { path = "../sketch" }
 
 [[example]]
 name = "commands_demo"
-path = "../examples/commands/demo.rs"
+path = "../../examples/commands/demo.rs"
 
 [[example]]
 name = "bezier_single"
-path = "../examples/bezier/single.rs"
+path = "../../examples/bezier/single.rs"
 
 [[example]]
 name = "bezier_multi"
-path = "../examples/bezier/multi.rs"
+path = "../../examples/bezier/multi.rs"
 
 [[example]]
 name = "bezier_realtime"
-path = "../examples/bezier/realtime.rs"
+path = "../../examples/bezier/realtime.rs"
 
 [[example]]
 name = "bezier_split"
-path = "../examples/bezier/split.rs"
+path = "../../examples/bezier/split.rs"
 
 [[example]]
 name = "sketch_demo"
-path = "../examples/sketch/demo.rs"
+path = "../../examples/sketch/demo.rs"
 
 [[example]]
 name = "sketch_faces"
-path = "../examples/sketch/faces.rs"
+path = "../../examples/sketch/faces.rs"
 
 [[example]]
 name = "sketch_faces_extreme"
-path = "../examples/sketch/faces_extreme.rs"
+path = "../../examples/sketch/faces_extreme.rs"
 
 [[example]]
 name = "sketch_interactive"
-path = "../examples/sketch/interactive.rs"
+path = "../../examples/sketch/interactive.rs"
