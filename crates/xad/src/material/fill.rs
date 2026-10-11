@@ -107,8 +107,7 @@ impl FaceMaterial {
         }
 
         Self {
-            buffer: storage_buffers
-                .add(ShaderBuffer::from(buffer)),
+            buffer: storage_buffers.add(ShaderBuffer::from(buffer)),
         }
     }
 }

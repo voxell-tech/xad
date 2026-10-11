@@ -100,8 +100,7 @@ fn interact(world: &mut World) {
         )
     };
 
-    let mut editor =
-        world.remove_non_send::<Editor>().unwrap();
+    let mut editor = world.remove_non_send::<Editor>().unwrap();
     let mut changed = false;
 
     if let Some(hit) = hit {
