@@ -67,6 +67,11 @@ impl<W, E> Timeline<W, E> {
         }
     }
 
+    /// What a feature produced in the last [`regen`](Self::regen).
+    pub fn output(&self, id: FeatureId) -> Option<&E> {
+        self.outputs.get(&id).and_then(|o| o.value.as_ref())
+    }
+
     pub fn cleanup(&mut self, world: &mut W) {
         for output in self.outputs.values() {
             if let Some(cleanup) = &output.cleanup {

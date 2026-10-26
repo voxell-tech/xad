@@ -33,8 +33,6 @@ impl Plane {
 
 #[derive(Component)]
 pub struct Sketch {
-    // constrained to the plane's face
-    pub position: Vec2,
     pub curves: Vec<BezierCurve>,
     pub plane: Plane,
 }
@@ -62,32 +60,19 @@ impl Sketch {
         self.basis()
     }
 
-    // normalises pos to the plane's face, in world space
-    pub fn get_position(&self) -> Vec3 {
-        self.plane_offset(self.position)
-    }
-
-    // World position of a plane-local coordinate (e.g. a curve control point).
-    pub fn plane_point(&self, local: Vec2) -> Vec3 {
-        self.get_position() + self.plane_offset(local)
-    }
-
     // Projects a world point back into plane-local coordinates.
     pub fn world_to_local(&self, world: Vec3) -> Vec2 {
         let (tangent, bitangent) = self.basis();
-        let rel = world - self.get_position();
-        Vec2::new(rel.dot(tangent), rel.dot(bitangent))
+        Vec2::new(world.dot(tangent), world.dot(bitangent))
     }
 
     pub fn into_bundle(self) -> impl Bundle {
-        let transform =
-            Transform::from_translation(self.get_position());
-        (self, transform)
+        // Transform and Visibility let the render layers spawn as children.
+        (self, Transform::default(), Visibility::default())
     }
 }
 
 pub struct CreateSketch {
-    pub position: Vec2,
     pub plane: Plane,
 }
 
@@ -102,7 +87,6 @@ impl Feature<World, Entity> for CreateSketch {
         _outputs: &HashMap<FeatureId, FeatureOutput<World, Entity>>,
     ) -> FeatureOutput<World, Entity> {
         let sketch = Sketch {
-            position: self.position,
             plane: self.plane,
             curves: vec![],
         };
