@@ -1,8 +1,13 @@
+use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
 use bevy::prelude::*;
-use bevy::render::render_resource::AsBindGroup;
+use bevy::render::mesh::MeshVertexBufferLayoutRef;
+use bevy::render::render_resource::{
+    AsBindGroup, RenderPipelineDescriptor,
+    SpecializedMeshPipelineError,
+};
 use bevy::render::storage::ShaderBuffer;
 use bevy::shader::ShaderRef;
-use bezier::{BezierCurve, Polarity};
+use bezier::{Aabb, BezierCurve, Polarity, TileGrid};
 use encase::ShaderType;
 
 use super::frame::PlaneFrame;
@@ -10,6 +15,11 @@ use super::frame::PlaneFrame;
 // Fixed-size arrays mirrored in sketch_faces.wgsl.
 const MAX_EDGES: usize = 128;
 const MAX_FACES: usize = 32;
+const MAX_TILES: usize = 256;
+const MAX_TILE_INDICES: usize = 2048;
+// Tiles along the sketch bounds' longer axis.
+// TODO: tune adaptively (edge count / density) instead of a constant.
+const GRID_RESOLUTION: u32 = 16;
 
 // A curve with the face touching each side, looking along p0 -> p2.
 // 0 = the unbounded outside, otherwise face id + 1.
@@ -27,11 +37,18 @@ struct FaceBuffer {
     origin: Vec4,
     tangent: Vec4,
     bitangent: Vec4,
+    grid_min: Vec2,
+    inv_tile_size: Vec2,
     edge_count: u32,
     // Non-zero = tint by nearest edge instead of face color.
     debug_tint: u32,
+    grid_cols: u32,
+    grid_rows: u32,
     colors: [Vec4; MAX_FACES],
     edges: [Edge; MAX_EDGES],
+    // Per tile, (offset, count) into `tile_indices`, row-major.
+    tiles: [UVec2; MAX_TILES],
+    tile_indices: [u32; MAX_TILE_INDICES],
 }
 
 impl Default for FaceBuffer {
@@ -40,17 +57,24 @@ impl Default for FaceBuffer {
             origin: Vec4::ZERO,
             tangent: Vec4::X,
             bitangent: Vec4::Y,
+            grid_min: Vec2::ZERO,
+            inv_tile_size: Vec2::ONE,
             edge_count: 0,
             debug_tint: 0,
+            grid_cols: 1,
+            grid_rows: 1,
             colors: [Vec4::ZERO; MAX_FACES],
             edges: [Edge::default(); MAX_EDGES],
+            tiles: [UVec2::ZERO; MAX_TILES],
+            tile_indices: [0; MAX_TILE_INDICES],
         }
     }
 }
 
-/// Fills every face of a sketch in one pass. The fragment shader finds the
-/// curve nearest to the pixel and fills with the color of the face on the
-/// pixel's side of that curve.
+/// Fills every face of a sketch in one pass. The fragment shader looks up
+/// its tile's candidate list, finds the curve nearest to the pixel among
+/// them, and fills with the color of the face on the pixel's side of that
+/// curve.
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct FaceMaterial {
     #[storage(0, read_only)]
@@ -59,11 +83,13 @@ pub struct FaceMaterial {
 
 impl FaceMaterial {
     /// `curves` and `polarity` come from `detect_faces` on the
-    /// intersection-split curves; `colors` is indexed by face id.
+    /// intersection-split curves; `colors` is indexed by face id;
+    /// `bounds` is the plane-local rect the fill mesh covers.
     pub fn new(
         curves: &[BezierCurve],
         polarity: &[Polarity],
         colors: &[LinearRgba],
+        bounds: Aabb,
         frame: PlaneFrame,
         debug_tint: bool,
         storage_buffers: &mut Assets<ShaderBuffer>,
@@ -106,6 +132,26 @@ impl FaceMaterial {
             buffer.edge_count += 1;
         }
 
+        // Per-tile candidate lists over the same uploaded prefix.
+        let uploaded = &curves[..buffer.edge_count as usize];
+        let grid = TileGrid::build_within(
+            uploaded,
+            bounds,
+            GRID_RESOLUTION,
+            MAX_TILE_INDICES,
+        );
+        buffer.grid_min = bounds.min;
+        buffer.inv_tile_size =
+            Vec2::new(grid.cols as f32, grid.rows as f32)
+                / bounds.size().max(Vec2::splat(f32::EPSILON));
+        buffer.grid_cols = grid.cols;
+        buffer.grid_rows = grid.rows;
+        for (i, tile) in grid.tiles.iter().enumerate() {
+            buffer.tiles[i] = UVec2::new(tile.offset, tile.count);
+        }
+        buffer.tile_indices[..grid.indices.len()]
+            .copy_from_slice(&grid.indices);
+
         Self {
             buffer: storage_buffers.add(ShaderBuffer::from(buffer)),
         }
@@ -120,26 +166,29 @@ impl Material for FaceMaterial {
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Blend
     }
+
+    // Sorts nearer than the coplanar stroke quad, so faces draw on top
+    // of the sketch background and its edges.
+    fn depth_bias(&self) -> f32 {
+        -1.0
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // The sketch reads from both sides.
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
 }
 
 pub struct FaceMaterialPlugin;
 
 impl Plugin for FaceMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<FaceMaterial>::default())
-            .init_resource::<super::debug::ShowPolarityLabels>()
-            .init_resource::<super::debug::ShowEdgeTint>()
-            .init_resource::<super::debug::ShowBvh>()
-            .add_systems(
-                Update,
-                (
-                    super::debug::toggle_labels,
-                    super::debug::toggle_edge_tint,
-                    super::debug::toggle_bvh,
-                    super::debug::position_labels,
-                    super::debug::draw_bvh,
-                )
-                    .chain(),
-            );
+        app.add_plugins(MaterialPlugin::<FaceMaterial>::default());
     }
 }

@@ -15,14 +15,33 @@ struct FaceBuffer {
     origin:     vec4f,
     tangent:    vec4f,
     bitangent:  vec4f,
+    // Uniform grid over the mesh rect; each tile lists the only edges
+    // that can be nearest from inside it (built CPU-side, conservative).
+    grid_min:      vec2f,
+    inv_tile_size: vec2f,
     edge_count: u32,
     // Non-zero = tint by nearest edge instead of face color.
     debug_tint: u32,
+    grid_cols:  u32,
+    grid_rows:  u32,
     colors:     array<vec4f, 32>,
     edges:      array<Edge, 128>,
+    // Per tile, (offset, count) into tile_indices, row-major.
+    tiles:        array<vec2u, 256>,
+    tile_indices: array<u32, 2048>,
 }
 
 @group(3) @binding(0) var<storage, read> data: FaceBuffer;
+
+// The tile under `p`, clamped to the grid.
+fn tile_at(p: vec2f) -> vec2u {
+    let cell = clamp(
+        vec2i((p - data.grid_min) * data.inv_tile_size),
+        vec2i(0),
+        vec2i(i32(data.grid_cols) - 1, i32(data.grid_rows) - 1),
+    );
+    return data.tiles[u32(cell.y) * data.grid_cols + u32(cell.x)];
+}
 
 // https://www.shadertoy.com/view/MlKcDD
 const SQRT3: f32 = 1.732050807568877;
@@ -148,13 +167,16 @@ fn ccw_angle(u: vec2f, d: vec2f) -> f32 {
 // d = p - v is bounded clockwise by the ray with the smallest CCW angle to
 // d, and the sector's face lies on that ray's CCW side: `left` for an edge
 // leaving v forward, `right` for one traversed backward.
-fn sector_face(p: vec2f, v: vec2f) -> u32 {
+//
+// Only the tile's candidates are scanned: an edge touching v is within
+// distance(p, v) of p, so the tile list is guaranteed to hold it.
+fn sector_face(p: vec2f, v: vec2f, tile: vec2u) -> u32 {
     let d = p - v;
     var best = 7.0; // > 2pi
     var face = NO_SECTOR;
 
-    for (var i = 0u; i < data.edge_count; i++) {
-        let e = data.edges[i];
+    for (var k = 0u; k < tile.y; k++) {
+        let e = data.edges[data.tile_indices[tile.x + k]];
 
         if (distance(e.p0, v) < VERTEX_EPS) {
             var u = e.p1 - e.p0;
@@ -192,23 +214,19 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
         return vec4f(0.0);
     }
 
-    // Find the nearest edge.
-    // TODO: O(n) per pixel; a spatial structure (grid / BVH) would cut this.
+    // Nearest edge among the pixel's tile candidates. The CPU-built
+    // lists are conservative, so this matches a scan over every edge.
+    let tile = tile_at(p);
     var nearest = 1e20;
     var index = 0u;
-    for (var i = 0u; i < data.edge_count; i++) {
+    for (var k = 0u; k < tile.y; k++) {
+        let i = data.tile_indices[tile.x + k];
         let edge = data.edges[i];
         let sd = sdf_bezier_quadratic(p, edge.p0, edge.p1, edge.p2);
         if (abs(sd) < abs(nearest)) {
             nearest = sd;
             index = i;
         }
-    }
-
-    // Tint by nearest edge instead of face color, exposing where each
-    // edge's nearest-region begins and ends. Toggled with R.
-    if (data.debug_tint != 0u) {
-        return vec4f(edge_tint(index), 0.85);
     }
 
     // The sign tells which side of the edge this pixel is on — except when
@@ -225,7 +243,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
             edge.p0,
             distance(p, edge.p0) < distance(p, edge.p2),
         );
-        let sector = sector_face(p, v);
+        let sector = sector_face(p, v, tile);
         if (sector != NO_SECTOR) {
             face = sector;
         }
@@ -234,6 +252,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4f {
     if (face == 0u) {
         // The unbounded outside: draw nothing.
         return vec4f(0.0);
+    }
+    // Tint by nearest edge instead of face color, exposing where each
+    // edge's nearest-region begins and ends inside the faces. Toggled
+    // with R.
+    if (data.debug_tint != 0u) {
+        return vec4f(edge_tint(index), 0.85);
     }
     return data.colors[face - 1u];
 }

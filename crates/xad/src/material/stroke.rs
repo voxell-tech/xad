@@ -6,9 +6,9 @@ use bezier::BezierCurve;
 use encase::ShaderType;
 
 use super::frame::PlaneFrame;
-use super::sync::sync_sketch_render;
 
-const BACKGROUND: LinearRgba = LinearRgba::new(0.06, 0.06, 0.09, 1.0);
+// Translucent pane: must not wall off solids behind the sketch.
+const BACKGROUND: LinearRgba = LinearRgba::new(0.06, 0.06, 0.09, 0.35);
 // matches the fixed-size array in the WGSL shader
 const MAX_CURVES: usize = 128;
 
@@ -16,8 +16,7 @@ pub struct BezierMaterialPlugin;
 
 impl Plugin for BezierMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<BezierMaterial>::default())
-            .add_systems(Update, sync_sketch_render);
+        app.add_plugins(MaterialPlugin::<BezierMaterial>::default());
     }
 }
 

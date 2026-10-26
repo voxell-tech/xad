@@ -6,14 +6,37 @@ use bezier::{Bvh, bounding_box, detect_faces, split_intersections};
 use sketch::Sketch;
 
 use super::debug;
-use super::fill::FaceMaterial;
+use super::fill::{FaceMaterial, FaceMaterialPlugin};
 use super::frame::PlaneFrame;
-use super::stroke::BezierMaterial;
+use super::stroke::{BezierMaterial, BezierMaterialPlugin};
 
 // Margin around the sketch
 const BBOX_PAD: f32 = 0.05;
-// TODO: fix this so we do z-index, not just offset the plane
-const FACE_LAYER_OFFSET: f32 = 0.001;
+
+/// Everything a `Sketch` needs to render: the stroke and fill materials,
+/// the reactive rebuild, and the debug toggles.
+pub struct SketchRenderPlugin;
+
+impl Plugin for SketchRenderPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins((BezierMaterialPlugin, FaceMaterialPlugin))
+            .init_resource::<debug::ShowPolarityLabels>()
+            .init_resource::<debug::ShowEdgeTint>()
+            .init_resource::<debug::ShowBvh>()
+            .add_systems(
+                Update,
+                (
+                    debug::toggle_labels,
+                    debug::toggle_edge_tint,
+                    debug::toggle_bvh,
+                    sync_sketch_render,
+                    debug::position_labels,
+                    debug::draw_bvh,
+                )
+                    .chain(),
+            );
+    }
+}
 
 // Tracks the render entities spawned for a sketch. The on_replace hook frees
 // them whenever the component is overwritten by the next rebuild, removed, or
@@ -69,7 +92,7 @@ pub(super) fn sync_sketch_render(
         let normal = sketch.plane.normal();
         let (tangent, bitangent) = sketch.plane_basis();
         let frame = PlaneFrame {
-            origin: sketch.get_position(),
+            origin: Vec3::ZERO,
             tangent,
             bitangent,
         };
@@ -93,8 +116,8 @@ pub(super) fn sync_sketch_render(
             ))
             .id();
 
-        // Fill layer: faces of the intersection-split curves, all drawn by
-        // one material slightly in front of the strokes.
+        // Fill layer: faces of the intersection-split curves, coplanar
+        // with the strokes; FaceMaterial's depth bias draws it on top.
         let split = split_intersections(sketch.curves.clone());
         let detected = detect_faces(&split);
         let fill = (!detected.faces.is_empty()).then(|| {
@@ -107,16 +130,16 @@ pub(super) fn sync_sketch_render(
                 &split,
                 &detected.polarity,
                 &colors,
+                bounds,
                 frame,
                 edge_tint.0,
                 &mut storage_buffers,
             ));
-            let front = center + normal * FACE_LAYER_OFFSET;
             commands
                 .spawn((
                     Mesh3d(mesh.clone()),
                     MeshMaterial3d(material),
-                    Transform::from_translation(front),
+                    Transform::from_translation(center),
                     ChildOf(entity),
                 ))
                 .id()

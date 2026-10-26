@@ -79,8 +79,7 @@ pub(super) fn draw_bvh(
             continue;
         }
         let (tangent, bitangent) = sketch.plane_basis();
-        let origin = sketch.get_position()
-            + sketch.plane.normal() * BVH_LAYER_OFFSET;
+        let origin = sketch.plane.normal() * BVH_LAYER_OFFSET;
         let world = |p: Vec2| {
             origin + tangent * p.x + bitangent * p.y
         };
@@ -110,9 +109,9 @@ pub(super) fn draw_bvh(
                 ],
                 color,
             );
-            if !node.leaf {
+            if let bezier::BvhKind::Interior { right } = node.kind {
                 stack.push((index + 1, depth + 1));
-                stack.push((node.index, depth + 1));
+                stack.push((right, depth + 1));
             }
         }
     }

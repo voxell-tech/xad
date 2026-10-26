@@ -5,7 +5,7 @@ pub mod material;
 pub mod sdf;
 
 use camera::CameraPlugin;
-use material::BezierMaterialPlugin;
+use material::SketchRenderPlugin;
 use sdf::SdfPlugin;
 
 pub struct XadPlugin;
@@ -15,7 +15,7 @@ impl Plugin for XadPlugin {
         app.add_plugins((
             SdfPlugin,
             CameraPlugin,
-            BezierMaterialPlugin,
+            SketchRenderPlugin,
         ));
     }
 }
