@@ -1,6 +1,6 @@
 //! Example: faces are filled automatically for a sketch.
 //!
-//! Spawning a `Sketch` is enough: the `FaceMaterialPlugin` splits the curves
+//! Spawning a `Sketch` is enough: the `SketchRenderPlugin` splits the curves
 //! at their intersections, detects the enclosed regions, and fills them in a
 //! single layer in front of the strokes. The scene leans on the hard cases:
 //! a pentagram (five self-crossing lines carve six faces), a three-circle
@@ -12,15 +12,11 @@ use bevy::prelude::*;
 use bezier::shapes::circle::circle;
 use bezier::{BezierCurve, gen_color};
 use sketch::{Plane, Sketch};
-use xad::material::{BezierMaterialPlugin, FaceMaterialPlugin};
+use xad::material::SketchRenderPlugin;
 
 fn main() {
     App::new()
-        .add_plugins((
-            DefaultPlugins,
-            BezierMaterialPlugin,
-            FaceMaterialPlugin,
-        ))
+        .add_plugins((DefaultPlugins, SketchRenderPlugin))
         .add_systems(Startup, setup)
         .run();
 }
@@ -128,7 +124,6 @@ fn setup(mut commands: Commands) {
 
     commands.spawn(
         Sketch {
-            position: Vec2::ZERO,
             plane: Plane::right(),
             curves,
         }

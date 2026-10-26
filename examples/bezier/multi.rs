@@ -53,7 +53,6 @@ fn setup(mut commands: Commands) {
     commands
         .spawn(
             Sketch {
-                position: Vec2::ZERO,
                 plane: Plane::front(),
                 curves: left_curves,
             }
@@ -103,7 +102,6 @@ fn setup(mut commands: Commands) {
     commands
         .spawn(
             Sketch {
-                position: Vec2::ZERO,
                 plane: Plane::top(),
                 curves: bottom_curves,
             }
@@ -143,7 +141,6 @@ fn setup(mut commands: Commands) {
     commands
         .spawn(
             Sketch {
-                position: Vec2::ZERO,
                 plane: Plane::right(),
                 curves: right_curves,
             }

@@ -53,7 +53,6 @@ fn setup(mut commands: Commands) {
     // Sketch takes care of the mesh + material; no manual Assets<Mesh> etc.
     commands.spawn(
         Sketch {
-            position: Vec2::ZERO,
             plane: Plane::top(),
             curves,
         }

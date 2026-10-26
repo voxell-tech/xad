@@ -30,18 +30,17 @@ fn run_timeline(world: &mut World) {
 
     let sketch = timeline.push(CreateSketch {
         plane: Plane::top(),
-        position: Vec2::new(2.0, 3.0),
     });
 
     let circle_a = timeline.push(CreateCircle {
         sketch,
-        position: Vec2::ZERO,
+        position: Vec2::new(2.0, 3.0),
         radius: 0.6,
     });
 
     let circle_b = timeline.push(CreateCircle {
         sketch,
-        position: Vec2::ZERO,
+        position: Vec2::new(2.0, 3.0),
         radius: 0.3,
     });
 

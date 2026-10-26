@@ -119,7 +119,6 @@ fn setup(mut commands: Commands) {
 
     commands.spawn((
         Sketch {
-            position: Vec2::ZERO,
             plane: Plane::top(),
             curves,
         }

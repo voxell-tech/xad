@@ -7,11 +7,11 @@ use bezier::shapes::circle::circle;
 use bezier::shapes::polygon::polygon as feature_polygon;
 use bezier::shapes::square::square as feature_square;
 use sketch::{Plane, Sketch};
-use xad::material::BezierMaterialPlugin;
+use xad::material::SketchRenderPlugin;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, BezierMaterialPlugin))
+        .add_plugins((DefaultPlugins, SketchRenderPlugin))
         .add_systems(Startup, setup)
         .run();
 }
@@ -96,10 +96,18 @@ fn setup(mut commands: Commands) {
         ),
     ];
 
-    for (position, curves) in sketches {
+    for (offset, curves) in sketches {
+        let curves = curves
+            .into_iter()
+            .map(|mut c| {
+                c.p0 += offset;
+                c.p1 += offset;
+                c.p2 += offset;
+                c
+            })
+            .collect();
         commands.spawn(
             Sketch {
-                position,
                 plane: Plane::top(),
                 curves,
             }

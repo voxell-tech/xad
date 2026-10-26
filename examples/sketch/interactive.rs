@@ -14,7 +14,7 @@ use bevy::window::PrimaryWindow;
 use command_system::Timeline;
 use sketch::features::CreateCurve;
 use sketch::{CreateSketch, Plane};
-use xad::material::{BezierMaterialPlugin, FaceMaterialPlugin};
+use xad::material::SketchRenderPlugin;
 
 const POINT_RADIUS: f32 = 0.04;
 const POINT_Z: f32 = 0.05; // in front of the sketch plane (z = 0)
@@ -22,11 +22,7 @@ const PICK_RADIUS: f32 = 0.12;
 
 fn main() {
     App::new()
-        .add_plugins((
-            DefaultPlugins,
-            BezierMaterialPlugin,
-            FaceMaterialPlugin,
-        ))
+        .add_plugins((DefaultPlugins, SketchRenderPlugin))
         .add_systems(Startup, setup)
         .add_systems(PreUpdate, interact)
         .run();
@@ -147,7 +143,6 @@ fn rebuild(editor: &mut Editor, world: &mut World) {
     let mut timeline = Timeline::new();
     let sketch = timeline.push(CreateSketch {
         plane: Plane::right(),
-        position: Vec2::ZERO,
     });
     for group in editor.points.chunks_exact(4) {
         timeline.push(CreateCurve {

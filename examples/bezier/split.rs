@@ -117,7 +117,6 @@ fn spawn_sketch(
     commands
         .spawn(
             Sketch {
-                position: Vec2::ZERO,
                 plane: Plane::right(),
                 curves,
             }
