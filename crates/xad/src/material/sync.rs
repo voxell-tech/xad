@@ -2,7 +2,7 @@ use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use bevy::render::storage::ShaderBuffer;
-use bezier::{bounding_box, detect_faces, split_intersections};
+use bezier::{Bvh, bounding_box, detect_faces, split_intersections};
 use sketch::Sketch;
 
 use super::debug;
@@ -59,7 +59,9 @@ pub(super) fn sync_sketch_render(
         // Replacing (or removing) SketchRender triggers its on_remove hook,
         // which despawns the previous stroke/fill/labels.
         let Some(bounds) = bounding_box(&sketch.curves) else {
-            commands.entity(entity).remove::<SketchRender>();
+            commands
+                .entity(entity)
+                .remove::<(SketchRender, debug::SketchBvh)>();
             continue;
         };
         let bounds = bounds.padded(BBOX_PAD);
@@ -127,10 +129,13 @@ pub(super) fn sync_sketch_render(
             frame,
         );
 
-        commands.entity(entity).try_insert(SketchRender {
-            stroke,
-            fill,
-            labels,
-        });
+        commands.entity(entity).try_insert((
+            SketchRender {
+                stroke,
+                fill,
+                labels,
+            },
+            debug::SketchBvh(Bvh::build(&split)),
+        ));
     }
 }

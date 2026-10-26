@@ -129,12 +129,15 @@ impl Plugin for FaceMaterialPlugin {
         app.add_plugins(MaterialPlugin::<FaceMaterial>::default())
             .init_resource::<super::debug::ShowPolarityLabels>()
             .init_resource::<super::debug::ShowEdgeTint>()
+            .init_resource::<super::debug::ShowBvh>()
             .add_systems(
                 Update,
                 (
                     super::debug::toggle_labels,
                     super::debug::toggle_edge_tint,
+                    super::debug::toggle_bvh,
                     super::debug::position_labels,
+                    super::debug::draw_bvh,
                 )
                     .chain(),
             );

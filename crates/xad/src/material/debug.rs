@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bezier::{BezierCurve, Polarity};
+use bezier::{BezierCurve, Bvh, Polarity};
 use sketch::Sketch;
 
 use super::frame::PlaneFrame;
@@ -38,6 +38,82 @@ pub(super) fn toggle_edge_tint(
         // The flag lives in each fill buffer; rebuild them.
         for mut sketch in &mut sketches {
             sketch.set_changed();
+        }
+    }
+}
+
+/// Whether curve bounding boxes and the BVH over them are drawn.
+/// Toggled with B.
+#[derive(Resource, Default)]
+pub struct ShowBvh(pub bool);
+
+pub(super) fn toggle_bvh(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut show: ResMut<ShowBvh>,
+) {
+    if keys.just_pressed(KeyCode::KeyB) {
+        show.0 = !show.0;
+    }
+}
+
+/// BVH over a sketch's intersection-split curves.
+#[derive(Component)]
+pub(super) struct SketchBvh(pub Bvh);
+
+// Gizmo offset in front of the fill layer, and the extra inflation each
+// level gets over the one below so coincident box edges stay visible.
+const BVH_LAYER_OFFSET: f32 = 0.002;
+const LEVEL_PAD: f32 = 0.006;
+
+pub(super) fn draw_bvh(
+    show: Res<ShowBvh>,
+    mut gizmos: Gizmos,
+    sketches: Query<(&Sketch, &SketchBvh)>,
+) {
+    if !show.0 {
+        return;
+    }
+    for (sketch, bvh) in &sketches {
+        let nodes = &bvh.0.nodes;
+        if nodes.is_empty() {
+            continue;
+        }
+        let (tangent, bitangent) = sketch.plane_basis();
+        let origin = sketch.get_position()
+            + sketch.plane.normal() * BVH_LAYER_OFFSET;
+        let world = |p: Vec2| {
+            origin + tangent * p.x + bitangent * p.y
+        };
+
+        // Median splits keep the tree balanced, so the deepest level is
+        // ceil(log2(leaves)). Leaves draw their exact curve AABB; each
+        // level above is inflated one step further outward.
+        let leaves = (nodes.len() + 1) / 2;
+        let max_depth =
+            leaves.next_power_of_two().trailing_zeros();
+
+        let mut stack = vec![(0u32, 0u32)];
+        while let Some((index, depth)) = stack.pop() {
+            let node = nodes[index as usize];
+            let aabb = node
+                .aabb
+                .padded(max_depth.saturating_sub(depth) as f32 * LEVEL_PAD);
+            let color =
+                Color::hsl(depth as f32 * 137.5 % 360.0, 0.9, 0.6);
+            gizmos.linestrip(
+                [
+                    world(aabb.min),
+                    world(Vec2::new(aabb.max.x, aabb.min.y)),
+                    world(aabb.max),
+                    world(Vec2::new(aabb.min.x, aabb.max.y)),
+                    world(aabb.min),
+                ],
+                color,
+            );
+            if !node.leaf {
+                stack.push((index + 1, depth + 1));
+                stack.push((node.index, depth + 1));
+            }
         }
     }
 }
